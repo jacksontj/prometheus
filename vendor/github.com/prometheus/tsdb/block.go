@@ -16,6 +16,7 @@ package tsdb
 
 import (
 	"encoding/json"
+	"context"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -285,7 +286,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	}
 
 	pr := newPostingsReader(pb.indexr)
-	p, absent := pr.Select(ms...)
+	p, absent := pr.Select(context.Background(), ms...)
 
 	ir := pb.indexr
 
