@@ -16,6 +16,7 @@ package tsdb
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -620,7 +621,7 @@ func (db *DB) Snapshot(dir string) error {
 
 // Querier returns a new querier over the data partition for the given time range.
 // A goroutine must not handle more than one open Querier.
-func (db *DB) Querier(mint, maxt int64) (Querier, error) {
+func (db *DB) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
 	var blocks []BlockReader
 
 	db.mtx.RLock()
@@ -637,10 +638,11 @@ func (db *DB) Querier(mint, maxt int64) (Querier, error) {
 	}
 
 	sq := &querier{
+		ctx: ctx,
 		blocks: make([]Querier, 0, len(blocks)),
 	}
 	for _, b := range blocks {
-		q, err := NewBlockQuerier(b, mint, maxt)
+		q, err := NewBlockQuerier(ctx, b, mint, maxt)
 		if err == nil {
 			sq.blocks = append(sq.blocks, q)
 			continue

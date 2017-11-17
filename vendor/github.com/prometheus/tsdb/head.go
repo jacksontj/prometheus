@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"math"
 	"runtime"
 	"sort"
@@ -575,7 +576,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...labels.Matcher) error {
 	ir := h.indexRange(mint, maxt)
 
 	pr := newPostingsReader(ir)
-	p, absent := pr.Select(ms...)
+	p, absent := pr.Select(context.Background(), ms...)
 
 	var stones []Stone
 
@@ -847,7 +848,7 @@ func (h *headIndexReader) Postings(name, value string) (Postings, error) {
 	return h.head.postings.get(name, value), nil
 }
 
-func (h *headIndexReader) SortedPostings(p Postings) Postings {
+func (h *headIndexReader) SortedPostings(ctx context.Context, p Postings) Postings {
 	ep := make([]uint64, 0, 128)
 
 	for p.Next() {
@@ -857,7 +858,14 @@ func (h *headIndexReader) SortedPostings(p Postings) Postings {
 		return errPostings{err: errors.Wrap(err, "expand postings")}
 	}
 
+
 	sort.Slice(ep, func(i, j int) bool {
+		// If the context has cancelled, stop doing the expensive compare
+		select {
+			case <-ctx.Done():
+				return false
+			default:
+		}
 		a := h.head.series.getByID(ep[i])
 		b := h.head.series.getByID(ep[j])
 

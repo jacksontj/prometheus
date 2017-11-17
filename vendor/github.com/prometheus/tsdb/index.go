@@ -16,6 +16,7 @@ package tsdb
 import (
 	"bufio"
 	"encoding/binary"
+	"context"
 	"fmt"
 	"hash"
 	"io"
@@ -536,7 +537,7 @@ type IndexReader interface {
 
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
-	SortedPostings(Postings) Postings
+	SortedPostings(context.Context, Postings) Postings
 
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
@@ -877,7 +878,7 @@ func (r *indexReader) Postings(name, value string) (Postings, error) {
 	return newBigEndianPostings(d2.get()), nil
 }
 
-func (r *indexReader) SortedPostings(p Postings) Postings {
+func (r *indexReader) SortedPostings(ctx context.Context, p Postings) Postings {
 	return p
 }
 

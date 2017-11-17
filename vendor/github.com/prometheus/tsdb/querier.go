@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -51,6 +52,7 @@ type Series interface {
 // querier aggregates querying results from time blocks within
 // a single partition.
 type querier struct {
+	ctx context.Context
 	blocks []Querier
 }
 
@@ -107,7 +109,7 @@ func (q *querier) Close() error {
 }
 
 // NewBlockQuerier returns a queries against the readers.
-func NewBlockQuerier(b BlockReader, mint, maxt int64) (Querier, error) {
+func NewBlockQuerier(ctx context.Context, b BlockReader, mint, maxt int64) (Querier, error) {
 	indexr, err := b.Index()
 	if err != nil {
 		return nil, errors.Wrapf(err, "open index reader")
@@ -124,6 +126,7 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (Querier, error) {
 		return nil, errors.Wrapf(err, "open tombstone reader")
 	}
 	return &blockQuerier{
+		ctx: ctx,
 		mint:       mint,
 		maxt:       maxt,
 		index:      indexr,
@@ -134,6 +137,7 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (Querier, error) {
 
 // blockQuerier provides querying access to a single block database.
 type blockQuerier struct {
+	ctx context.Context
 	index      IndexReader
 	chunks     ChunkReader
 	tombstones TombstoneReader
@@ -144,7 +148,7 @@ type blockQuerier struct {
 func (q *blockQuerier) Select(ms ...labels.Matcher) SeriesSet {
 	pr := newPostingsReader(q.index)
 
-	p, absent := pr.Select(ms...)
+	p, absent := pr.Select(q.ctx, ms...)
 
 	return &blockSeriesSet{
 		set: &populatedChunkSeries{
@@ -205,7 +209,7 @@ func newPostingsReader(i IndexReader) *postingsReader {
 	return &postingsReader{index: i}
 }
 
-func (r *postingsReader) Select(ms ...labels.Matcher) (Postings, []string) {
+func (r *postingsReader) Select(ctx context.Context, ms ...labels.Matcher) (Postings, []string) {
 	var (
 		its    []Postings
 		absent []string
@@ -222,7 +226,7 @@ func (r *postingsReader) Select(ms ...labels.Matcher) (Postings, []string) {
 
 	p := Intersect(its...)
 
-	return r.index.SortedPostings(p), absent
+	return r.index.SortedPostings(ctx, p), absent
 }
 
 // tuplesByPrefix uses binary search to find prefix matches within ts.
