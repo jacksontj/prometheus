@@ -16,6 +16,7 @@ package web
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -175,6 +176,7 @@ func TestFederation(t *testing.T) {
 	}
 
 	h := &Handler{
+		context:     context.Background(),
 		storage:     suite.Storage(),
 		queryEngine: suite.QueryEngine(),
 		now:         func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
