@@ -16,7 +16,7 @@ package v1
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	encodingjson "encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -247,11 +247,11 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
-			now:                   func() time.Time { return now },
-			config:                func() config.Config { return samplePrometheusCfg },
-			flagsMap:              sampleFlagMap,
-			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
-			rulesRetriever:        algr,
+			now:            func() time.Time { return now },
+			config:         func() config.Config { return samplePrometheusCfg },
+			flagsMap:       sampleFlagMap,
+			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever: algr,
 		}
 
 		testEndpoints(t, api, true)
@@ -300,11 +300,11 @@ func TestEndpoints(t *testing.T) {
 			QueryEngine:           suite.QueryEngine(),
 			targetRetriever:       testTargetRetriever{},
 			alertmanagerRetriever: testAlertmanagerRetriever{},
-			now:                   func() time.Time { return now },
-			config:                func() config.Config { return samplePrometheusCfg },
-			flagsMap:              sampleFlagMap,
-			ready:                 func(f http.HandlerFunc) http.HandlerFunc { return f },
-			rulesRetriever:        algr,
+			now:            func() time.Time { return now },
+			config:         func() config.Config { return samplePrometheusCfg },
+			flagsMap:       sampleFlagMap,
+			ready:          func(f http.HandlerFunc) http.HandlerFunc { return f },
+			rulesRetriever: algr,
 		}
 
 		testEndpoints(t, api, false)
@@ -969,7 +969,7 @@ func TestRespondSuccess(t *testing.T) {
 	}
 
 	var res response
-	if err = json.Unmarshal([]byte(body), &res); err != nil {
+	if err = encodingjson.Unmarshal([]byte(body), &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 
@@ -1007,7 +1007,7 @@ func TestRespondError(t *testing.T) {
 	}
 
 	var res response
-	if err = json.Unmarshal([]byte(body), &res); err != nil {
+	if err = encodingjson.Unmarshal([]byte(body), &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 

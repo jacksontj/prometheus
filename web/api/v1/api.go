@@ -31,6 +31,8 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/mailru/easyjson"
+	"github.com/mailru/easyjson/jwriter"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -56,6 +58,8 @@ const (
 	namespace = "prometheus"
 	subsystem = "api"
 )
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type status string
 
@@ -115,6 +119,7 @@ type rulesRetriever interface {
 	AlertingRules() []*rules.AlertingRule
 }
 
+//easyjson:json
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -247,6 +252,28 @@ type queryData struct {
 	ResultType promql.ValueType  `json:"resultType"`
 	Result     promql.Value      `json:"result"`
 	Stats      *stats.QueryStats `json:"stats,omitempty"`
+}
+
+// MarshalJSON supports json.Marshaler interface
+func (v queryData) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	v.MarshalEasyJSON(&w)
+	return w.Buffer.BuildBytes(), w.Error
+}
+
+// MarshalEasyJSON supports easyjson.Marshaler interface
+func (v queryData) MarshalEasyJSON(out *jwriter.Writer) {
+	out.RawByte('{')
+	out.RawString("\"resultType\":\"")
+	out.RawString(string(v.ResultType))
+	out.RawString(`",`)
+	out.RawString("\"result\":")
+	if m, ok := v.Result.(easyjson.Marshaler); ok {
+		m.MarshalEasyJSON(out)
+	} else {
+		out.Raw(json.Marshal(v.Result))
+	}
+	out.RawByte('}')
 }
 
 func (api *API) options(r *http.Request) (interface{}, *apiError, func()) {
@@ -1050,20 +1077,17 @@ func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
 }
 
 func (api *API) respond(w http.ResponseWriter, data interface{}) {
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	b, err := json.Marshal(&response{
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	r := &response{
 		Status: statusSuccess,
 		Data:   data,
-	})
-	if err != nil {
-		level.Error(api.logger).Log("msg", "error marshalling json response", "err", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if n, err := w.Write(b); err != nil {
+
+	if n, err := easyjson.MarshalToWriter(r, w); err != nil {
 		level.Error(api.logger).Log("msg", "error writing response", "bytesWritten", n, "err", err)
 	}
 }
