@@ -16,7 +16,7 @@ package v1
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	encodingjson "encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -772,7 +772,7 @@ func TestRespondSuccess(t *testing.T) {
 	}
 
 	var res response
-	if err = json.Unmarshal([]byte(body), &res); err != nil {
+	if err = encodingjson.Unmarshal([]byte(body), &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 
@@ -809,7 +809,7 @@ func TestRespondError(t *testing.T) {
 	}
 
 	var res response
-	if err = json.Unmarshal([]byte(body), &res); err != nil {
+	if err = encodingjson.Unmarshal([]byte(body), &res); err != nil {
 		t.Fatalf("Error unmarshaling JSON body: %s", err)
 	}
 

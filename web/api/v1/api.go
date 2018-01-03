@@ -29,6 +29,9 @@ import (
 	"unsafe"
 
 	jsoniter "github.com/json-iterator/go"
+
+	"github.com/mailru/easyjson"
+	"github.com/mailru/easyjson/jwriter"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/tsdb"
@@ -46,6 +49,8 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 	tsdbLabels "github.com/prometheus/tsdb/labels"
 )
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type status string
 
@@ -93,6 +98,7 @@ type alertmanagerRetriever interface {
 	DroppedAlertmanagers() []*url.URL
 }
 
+//easyjson:json
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -205,6 +211,28 @@ type queryData struct {
 	ResultType promql.ValueType  `json:"resultType"`
 	Result     promql.Value      `json:"result"`
 	Stats      *stats.QueryStats `json:"stats,omitempty"`
+}
+
+// MarshalJSON supports json.Marshaler interface
+func (v queryData) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	v.MarshalEasyJSON(&w)
+	return w.Buffer.BuildBytes(), w.Error
+}
+
+// MarshalEasyJSON supports easyjson.Marshaler interface
+func (v queryData) MarshalEasyJSON(out *jwriter.Writer) {
+	out.RawByte('{')
+	out.RawString("\"resultType\":\"")
+	out.RawString(string(v.ResultType))
+	out.RawString(`",`)
+	out.RawString("\"result\":")
+	if m, ok := v.Result.(easyjson.Marshaler); ok {
+		m.MarshalEasyJSON(out)
+	} else {
+		out.Raw(json.Marshal(v.Result))
+	}
+	out.RawByte('}')
 }
 
 func (api *API) options(r *http.Request) (interface{}, *apiError, func()) {
@@ -823,15 +851,14 @@ func respond(w http.ResponseWriter, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	json := jsoniter.ConfigCompatibleWithStandardLibrary
-	b, err := json.Marshal(&response{
+	r := &response{
 		Status: statusSuccess,
 		Data:   data,
-	})
-	if err != nil {
-		return
 	}
-	w.Write(b)
+
+	w.Header().Set("Content-Type", "application/json")
+
+	easyjson.MarshalToWriter(r, w)
 }
 
 func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
