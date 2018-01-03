@@ -312,7 +312,6 @@ func (e ValueType) String() string {
 }
 
 // Scalar is a scalar value evaluated at the set timestamp.
-//easyjson:json
 type Scalar struct {
 	Value     SampleValue `json:"value"`
 	Timestamp Time        `json:"timestamp"`

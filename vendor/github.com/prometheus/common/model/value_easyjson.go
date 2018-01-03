@@ -4,6 +4,7 @@ package model
 
 import (
 	json "encoding/json"
+
 	easyjson "github.com/mailru/easyjson"
 	jlexer "github.com/mailru/easyjson/jlexer"
 	jwriter "github.com/mailru/easyjson/jwriter"
@@ -97,7 +98,7 @@ func (v *Vector) UnmarshalJSON(data []byte) error {
 func (v *Vector) UnmarshalEasyJSON(l *jlexer.Lexer) {
 	easyjsonC5568b25DecodeGithubComPrometheusCommonModel(l, v)
 }
-func easyjsonC5568b25DecodeGithubComPrometheusCommonModel2(in *jlexer.Lexer, out *SampleStream) {
+func easyjsonC5568b25DecodeGithubComPrometheusCommonModel1(in *jlexer.Lexer, out *SampleStream) {
 	isTopLevel := in.IsStart()
 	if in.IsNull() {
 		if isTopLevel {
@@ -171,7 +172,7 @@ func easyjsonC5568b25DecodeGithubComPrometheusCommonModel2(in *jlexer.Lexer, out
 		in.Consumed()
 	}
 }
-func easyjsonC5568b25EncodeGithubComPrometheusCommonModel2(out *jwriter.Writer, in SampleStream) {
+func easyjsonC5568b25EncodeGithubComPrometheusCommonModel1(out *jwriter.Writer, in SampleStream) {
 	out.RawByte('{')
 	first := true
 	_ = first
@@ -204,27 +205,27 @@ func easyjsonC5568b25EncodeGithubComPrometheusCommonModel2(out *jwriter.Writer, 
 // MarshalJSON supports json.Marshaler interface
 func (v SampleStream) MarshalJSON() ([]byte, error) {
 	w := jwriter.Writer{}
-	easyjsonC5568b25EncodeGithubComPrometheusCommonModel2(&w, v)
+	easyjsonC5568b25EncodeGithubComPrometheusCommonModel1(&w, v)
 	return w.Buffer.BuildBytes(), w.Error
 }
 
 // MarshalEasyJSON supports easyjson.Marshaler interface
 func (v SampleStream) MarshalEasyJSON(w *jwriter.Writer) {
-	easyjsonC5568b25EncodeGithubComPrometheusCommonModel2(w, v)
+	easyjsonC5568b25EncodeGithubComPrometheusCommonModel1(w, v)
 }
 
 // UnmarshalJSON supports json.Unmarshaler interface
 func (v *SampleStream) UnmarshalJSON(data []byte) error {
 	r := jlexer.Lexer{Data: data}
-	easyjsonC5568b25DecodeGithubComPrometheusCommonModel2(&r, v)
+	easyjsonC5568b25DecodeGithubComPrometheusCommonModel1(&r, v)
 	return r.Error()
 }
 
 // UnmarshalEasyJSON supports easyjson.Unmarshaler interface
 func (v *SampleStream) UnmarshalEasyJSON(l *jlexer.Lexer) {
-	easyjsonC5568b25DecodeGithubComPrometheusCommonModel2(l, v)
+	easyjsonC5568b25DecodeGithubComPrometheusCommonModel1(l, v)
 }
-func easyjsonC5568b25DecodeGithubComPrometheusCommonModel3(in *jlexer.Lexer, out *Matrix) {
+func easyjsonC5568b25DecodeGithubComPrometheusCommonModel2(in *jlexer.Lexer, out *Matrix) {
 	isTopLevel := in.IsStart()
 	if in.IsNull() {
 		in.Skip()
@@ -260,7 +261,7 @@ func easyjsonC5568b25DecodeGithubComPrometheusCommonModel3(in *jlexer.Lexer, out
 		in.Consumed()
 	}
 }
-func easyjsonC5568b25EncodeGithubComPrometheusCommonModel3(out *jwriter.Writer, in Matrix) {
+func easyjsonC5568b25EncodeGithubComPrometheusCommonModel2(out *jwriter.Writer, in Matrix) {
 	if in == nil && (out.Flags&jwriter.NilSliceAsEmpty) == 0 {
 		out.RawString("null")
 	} else {
@@ -282,23 +283,23 @@ func easyjsonC5568b25EncodeGithubComPrometheusCommonModel3(out *jwriter.Writer, 
 // MarshalJSON supports json.Marshaler interface
 func (v Matrix) MarshalJSON() ([]byte, error) {
 	w := jwriter.Writer{}
-	easyjsonC5568b25EncodeGithubComPrometheusCommonModel3(&w, v)
+	easyjsonC5568b25EncodeGithubComPrometheusCommonModel2(&w, v)
 	return w.Buffer.BuildBytes(), w.Error
 }
 
 // MarshalEasyJSON supports easyjson.Marshaler interface
 func (v Matrix) MarshalEasyJSON(w *jwriter.Writer) {
-	easyjsonC5568b25EncodeGithubComPrometheusCommonModel3(w, v)
+	easyjsonC5568b25EncodeGithubComPrometheusCommonModel2(w, v)
 }
 
 // UnmarshalJSON supports json.Unmarshaler interface
 func (v *Matrix) UnmarshalJSON(data []byte) error {
 	r := jlexer.Lexer{Data: data}
-	easyjsonC5568b25DecodeGithubComPrometheusCommonModel3(&r, v)
+	easyjsonC5568b25DecodeGithubComPrometheusCommonModel2(&r, v)
 	return r.Error()
 }
 
 // UnmarshalEasyJSON supports easyjson.Unmarshaler interface
 func (v *Matrix) UnmarshalEasyJSON(l *jlexer.Lexer) {
-	easyjsonC5568b25DecodeGithubComPrometheusCommonModel3(l, v)
+	easyjsonC5568b25DecodeGithubComPrometheusCommonModel2(l, v)
 }

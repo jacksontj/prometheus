@@ -600,10 +600,13 @@
 			"revisionTime": "2017-04-27T09:48:40Z"
 		},
 		{
-			"checksumSHA1": "0LL9u9tfv1KPBjNEiMDP6q7lpog=",
+			"checksumSHA1": "14cS/cT5RDyknlII3UcZ5nESlZQ=",
+			"origin": "github.com/jacksontj/common/model",
 			"path": "github.com/prometheus/common/model",
-			"revision": "9e0844febd9e2856f839c9cb974fbd676d1755a8",
-			"revisionTime": "2017-04-18T15:52:10Z"
+			"revision": "0fb8af015ceb98744e04510bd8e8366abfb37546",
+			"revisionTime": "2017-12-21T18:01:09Z",
+			"version": "=tjackson_fork",
+			"versionExact": "tjackson_fork"
 		},
 		{
 			"checksumSHA1": "9aDxDuzZt1l7FQJ9qpn2kPcF7NU=",

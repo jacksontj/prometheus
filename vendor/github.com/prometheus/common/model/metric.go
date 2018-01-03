@@ -95,13 +95,21 @@ func (m Metric) MarshalEasyJSON(w *jwriter.Writer) {
 	for k, v := range m {
 		if !first {
 			w.RawByte(',')
+		} else {
+			first = false
 		}
-		first = false
-		w.RawString(string(k))
-		w.RawByte(',')
-		w.RawString(string(v))
+		w.RawString(`"` + string(k) + `"`)
+		w.RawByte(':')
+		w.RawString(`"` + string(v) + `"`)
 	}
 	w.RawByte('}')
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (m Metric) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	m.MarshalEasyJSON(&w)
+	return w.Buffer.BuildBytes(), w.Error
 }
 
 // IsValidMetricName returns true iff name matches the pattern of MetricNameRE.

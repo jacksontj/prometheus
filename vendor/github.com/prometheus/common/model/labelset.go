@@ -152,19 +152,27 @@ func (ls LabelSet) FastFingerprint() Fingerprint {
 	return labelSetToFastFingerprint(ls)
 }
 
-func (l *LabelSet) MarshalEasyJSON(w *jwriter.Writer) {
+func (l LabelSet) MarshalEasyJSON(w *jwriter.Writer) {
 	w.RawByte('{')
 	first := true
-	for k, v := range *l {
+	for k, v := range l {
 		if !first {
 			w.RawByte(',')
+		} else {
+			first = false
 		}
-		first = false
-		w.RawString(string(k))
-		w.RawByte(',')
-		w.RawString(string(v))
+		w.RawString(`"` + string(k) + `"`)
+		w.RawByte(':')
+		w.RawString(`"` + string(v) + `"`)
 	}
 	w.RawByte('}')
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (l LabelSet) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	l.MarshalEasyJSON(&w)
+	return w.Buffer.BuildBytes(), w.Error
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.

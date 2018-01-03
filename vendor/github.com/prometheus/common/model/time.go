@@ -118,14 +118,45 @@ var dotPrecision = int(math.Log10(float64(second)))
 // String returns a string representation of the Time.
 func (t Time) String() string {
 	timeStr := strconv.FormatInt(int64(t), 10)
-	return timeStr[:len(timeStr)-secondDigitLen] + "." + timeStr[len(timeStr)-secondDigitLen:]
+	lenDelta := secondDigitLen - len(timeStr)
+
+	retString := ""
+
+	// Put out anything before a decimal
+	if len(timeStr) > secondDigitLen {
+		retString = timeStr[:len(timeStr)-secondDigitLen]
+	}
+
+	// put the decimal there
+	retString += "."
+
+	// pad (if needed)
+	if lenDelta > 0 {
+		retString += strings.Repeat("0", lenDelta) + timeStr
+	} else {
+		retString += timeStr[len(timeStr)-secondDigitLen:]
+	}
+	return retString
 }
 
 func (t Time) MarshalEasyJSON(w *jwriter.Writer) {
 	timeStr := strconv.FormatInt(int64(t), 10)
-	w.RawString(timeStr[:len(timeStr)-secondDigitLen])
+	lenDelta := secondDigitLen - len(timeStr)
+
+	// Put out anything before a decimal
+	if len(timeStr) > secondDigitLen {
+		w.RawString(timeStr[:len(timeStr)-secondDigitLen])
+	}
+
+	// put the decimal there
 	w.RawByte('.')
-	w.RawString(timeStr[len(timeStr)-secondDigitLen:])
+
+	// pad (if needed)
+	if lenDelta > 0 {
+		w.RawString(strings.Repeat("0", lenDelta) + timeStr)
+	} else {
+		w.RawString(timeStr[len(timeStr)-secondDigitLen:])
+	}
 }
 
 // MarshalJSON implements the json.Marshaler interface.
@@ -178,9 +209,21 @@ func (t *Time) UnmarshalJSON(b []byte) error {
 // This type should not propagate beyond the scope of input/output processing.
 type Duration time.Duration
 
+// Set implements pflag/flag.Value
+func (d *Duration) Set(s string) error {
+	var err error
+	*d, err = ParseDuration(s)
+	return err
+}
+
+// Type implements pflag.Value
+func (d *Duration) Type() string {
+	return "duration"
+}
+
 var durationRE = regexp.MustCompile("^([0-9]+)(y|w|d|h|m|s|ms)$")
 
-// StringToDuration parses a string into a time.Duration, assuming that a year
+// ParseDuration parses a string into a time.Duration, assuming that a year
 // always has 365d, a week always has 7d, and a day always has 24h.
 func ParseDuration(durationStr string) (Duration, error) {
 	matches := durationRE.FindStringSubmatch(durationStr)
@@ -217,6 +260,9 @@ func (d Duration) String() string {
 		ms   = int64(time.Duration(d) / time.Millisecond)
 		unit = "ms"
 	)
+	if ms == 0 {
+		return "0s"
+	}
 	factors := map[string]int64{
 		"y":  1000 * 60 * 60 * 24 * 365,
 		"w":  1000 * 60 * 60 * 24 * 7,
