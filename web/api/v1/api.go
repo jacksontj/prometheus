@@ -25,6 +25,8 @@ import (
 	"strconv"
 	"time"
 
+    "github.com/mailru/easyjson"
+	"github.com/mailru/easyjson/jwriter"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
@@ -82,6 +84,7 @@ type alertmanagerRetriever interface {
 	Alertmanagers() []*url.URL
 }
 
+//easyjson:json 
 type response struct {
 	Status    status      `json:"status"`
 	Data      interface{} `json:"data,omitempty"`
@@ -170,6 +173,28 @@ func (api *API) Register(r *route.Router) {
 type queryData struct {
 	ResultType promql.ValueType `json:"resultType"`
 	Result     promql.Value     `json:"result"`
+}
+
+// MarshalJSON supports json.Marshaler interface
+func (v queryData) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	v.MarshalEasyJSON(&w)
+	return w.Buffer.BuildBytes(), w.Error
+}
+
+// MarshalEasyJSON supports easyjson.Marshaler interface
+func (v queryData) MarshalEasyJSON(out *jwriter.Writer) {
+	out.RawByte('{')
+	out.RawString("\"resultType\":\"")
+	out.RawString(string(v.ResultType))
+	out.RawString(`",`)
+	out.RawString("\"result\":")
+	if m, ok := v.Result.(easyjson.Marshaler); ok {
+		m.MarshalEasyJSON(out)
+	} else {
+		out.Raw(json.Marshal(v.Result))
+	}
+	out.RawByte('}')
 }
 
 func (api *API) options(r *http.Request) (interface{}, *apiError) {
@@ -555,17 +580,17 @@ func mergeLabels(primary, secondary []*prompb.Label) []*prompb.Label {
 }
 
 func respond(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	b, err := json.Marshal(&response{
+	r := response{
 		Status: statusSuccess,
 		Data:   data,
-	})
-	if err != nil {
-		return
 	}
-	w.Write(b)
+
+	w.Header().Set("Content-Type", "application/json")
+
+	started, _, err := easyjson.MarshalToHTTPResponseWriter(r, w)
+	if err != nil && !started {
+		respondError(w, &apiError{errorInternal, err}, nil)
+	}
 }
 
 func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
