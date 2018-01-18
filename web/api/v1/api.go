@@ -609,10 +609,7 @@ func respond(w http.ResponseWriter, data interface{}) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	started, _, err := easyjson.MarshalToHTTPResponseWriter(r, w)
-	if err != nil && !started {
-		respondError(w, &apiError{errorInternal, err}, nil)
-	}
+	easyjson.MarshalToWriter(r, w)
 }
 
 func respondError(w http.ResponseWriter, apiErr *apiError, data interface{}) {
