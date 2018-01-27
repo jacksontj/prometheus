@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -259,50 +260,78 @@ type Visitor interface {
 // v.Visit(node) is not nil, Walk is invoked recursively with visitor
 // w for each of the non-nil children of node, followed by a call of
 // w.Visit(nil).
-func Walk(v Visitor, st *EvalStmt, node Node, nr NodeReplacer) Node {
+func Walk(ctx context.Context, v Visitor, st *EvalStmt, node Node, nr NodeReplacer) (Node, error) {
 	if nr != nil {
-		if replacement := nr(st, node); replacement != nil {
+		replacement, err := nr(ctx, st, node)
+		if replacement != nil {
 			node = replacement
 		}
+		if err != nil {
+			return node, err
+		}
+
 	}
 
 	if v = v.Visit(node); v == nil {
-		return node
+		return node, nil
 	}
 
 	switch n := node.(type) {
 	case Statements:
 		for _, s := range n {
-			Walk(v, st, s, nr)
+			if _, err := Walk(ctx, v, st, s, nr); err != nil {
+				return nil, err
+			}
 		}
 	case *AlertStmt:
-		Walk(v, st, n.Expr, nr)
+		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+			return nil, err
+		}
 
 	case *EvalStmt:
-		Walk(v, st, n.Expr, nr)
+		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+			return nil, err
+		}
 
 	case *RecordStmt:
-		Walk(v, st, n.Expr, nr)
+		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+			return nil, err
+		}
 
 	case Expressions:
 		for _, e := range n {
-			Walk(v, st, e, nr)
+			if _, err := Walk(ctx, v, st, e, nr); err != nil {
+				return nil, err
+			}
+
 		}
 	case *AggregateExpr:
-		Walk(v, st, n.Expr, nr)
+		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+			return nil, err
+		}
 
 	case *BinaryExpr:
-		Walk(v, st, n.LHS, nr)
-		Walk(v, st, n.RHS, nr)
+		if _, err := Walk(ctx, v, st, n.LHS, nr); err != nil {
+			return nil, err
+		}
+		if _, err := Walk(ctx, v, st, n.RHS, nr); err != nil {
+			return nil, err
+		}
 
 	case *Call:
-		Walk(v, st, n.Args, nr)
+		if _, err := Walk(ctx, v, st, n.Args, nr); err != nil {
+			return nil, err
+		}
 
 	case *ParenExpr:
-		Walk(v, st, n.Expr, nr)
+		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+			return nil, err
+		}
 
 	case *UnaryExpr:
-		Walk(v, st, n.Expr, nr)
+		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+			return nil, err
+		}
 
 	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
 		// nothing to do
@@ -312,7 +341,7 @@ func Walk(v Visitor, st *EvalStmt, node Node, nr NodeReplacer) Node {
 	}
 
 	v.Visit(nil)
-	return node
+	return node, nil
 }
 
 type inspector func(Node) bool
@@ -327,8 +356,8 @@ func (f inspector) Visit(node Node) Visitor {
 // Inspect traverses an AST in depth-first order: It starts by calling
 // f(node); node must not be nil. If f returns true, Inspect invokes f
 // for all the non-nil children of node, recursively.
-func Inspect(s *EvalStmt, f func(Node) bool, nr NodeReplacer) Node {
-	return Walk(inspector(f), s, s.Expr, nr)
+func Inspect(ctx context.Context, s *EvalStmt, f func(Node) bool, nr NodeReplacer) (Node, error) {
+	return Walk(ctx, inspector(f), s, s.Expr, nr)
 }
 
-type NodeReplacer func(*EvalStmt, Node) Node
+type NodeReplacer func(context.Context, *EvalStmt, Node) (Node, error)

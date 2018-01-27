@@ -459,7 +459,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 	if err != nil {
 		return nil, err
 	}
-	defer ng.closeIterators(s)
+	defer ng.closeIterators(ctx, s)
 
 	evalTimer := query.stats.GetTimer(stats.InnerEvalTime).Start()
 	// Instant evaluation.
@@ -570,7 +570,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 func (ng *Engine) populateIterators(ctx context.Context, querier local.Querier, s *EvalStmt) error {
 	var queryErr error
-	n := Inspect(s, func(node Node) bool {
+	n, err := Inspect(ctx, s, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
 			if n.iterators == nil {
@@ -608,6 +608,10 @@ func (ng *Engine) populateIterators(ctx context.Context, querier local.Querier, 
 		}
 		return true
 	}, ng.options.NodeReplacer)
+	// If inspect had an error, return that
+	if err != nil {
+		return err
+	}
 	if nTyped, ok := n.(Expr); ok {
 		s.Expr = nTyped
 	} else {
@@ -616,8 +620,8 @@ func (ng *Engine) populateIterators(ctx context.Context, querier local.Querier, 
 	return queryErr
 }
 
-func (ng *Engine) closeIterators(s *EvalStmt) {
-	Inspect(s, func(node Node) bool {
+func (ng *Engine) closeIterators(ctx context.Context, s *EvalStmt) {
+	Inspect(ctx, s, func(node Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
 			for _, it := range n.iterators {
