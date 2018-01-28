@@ -319,11 +319,29 @@ func Walk(ctx context.Context, v Visitor, st *EvalStmt, node Node, nr NodeReplac
 		}
 
 	case *BinaryExpr:
-		if _, err := Walk(ctx, v, st, n.LHS, nr); err != nil {
-			return nil, err
-		}
-		if _, err := Walk(ctx, v, st, n.RHS, nr); err != nil {
-			return nil, err
+		// Do BinaryExpr in parallel (since this is where the tree diverges
+		childCtx, childCancel := context.WithCancel(ctx)
+		defer childCancel()
+		doneChan := make(chan error, 2)
+		go func() {
+			_, err := Walk(childCtx, v, st, n.LHS, nr)
+			doneChan <- err
+		}()
+		go func() {
+			_, err := Walk(childCtx, v, st, n.RHS, nr)
+			doneChan <- err
+		}()
+		x := 0
+		for x < 2 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case err := <-doneChan:
+				if err != nil {
+					return nil, err
+				}
+				x++
+			}
 		}
 
 	case *Call:
