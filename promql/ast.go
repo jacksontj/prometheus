@@ -145,7 +145,7 @@ func (m *MatrixSelector) SetIterators(its []local.SeriesIterator) {
 }
 
 func (m *MatrixSelector) HasIterators() bool {
-	return m.iterators != nil && len(m.iterators) > 0
+	return m.iterators != nil
 }
 
 // NumberLiteral represents a number.
@@ -186,7 +186,7 @@ func (v *VectorSelector) SetIterators(its []local.SeriesIterator) {
 }
 
 func (v *VectorSelector) HasIterators() bool {
-	return v.iterators != nil && len(v.iterators) > 0
+	return v.iterators != nil
 }
 
 func (e *AggregateExpr) Type() model.ValueType  { return model.ValVector }
@@ -286,36 +286,48 @@ func Walk(ctx context.Context, v Visitor, st *EvalStmt, node Node, nr NodeReplac
 
 	switch n := node.(type) {
 	case Statements:
-		for _, s := range n {
-			if _, err := Walk(ctx, v, st, s, nr); err != nil {
+		for i, s := range n {
+			if tmp, err := Walk(ctx, v, st, s, nr); err != nil {
 				return nil, err
+			} else {
+				n[i] = tmp.(Statement)
 			}
 		}
 	case *AlertStmt:
-		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+		if tmp, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
 			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
 		}
 
 	case *EvalStmt:
-		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+		if tmp, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
 			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
 		}
 
 	case *RecordStmt:
-		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+		if tmp, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
 			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
 		}
 
 	case Expressions:
-		for _, e := range n {
-			if _, err := Walk(ctx, v, st, e, nr); err != nil {
+		for i, e := range n {
+			if tmp, err := Walk(ctx, v, st, e, nr); err != nil {
 				return nil, err
+			} else {
+				n[i] = tmp.(Expr)
 			}
 
 		}
 	case *AggregateExpr:
-		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+		if tmp, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
 			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
 		}
 
 	case *BinaryExpr:
@@ -324,11 +336,17 @@ func Walk(ctx context.Context, v Visitor, st *EvalStmt, node Node, nr NodeReplac
 		defer childCancel()
 		doneChan := make(chan error, 2)
 		go func() {
-			_, err := Walk(childCtx, v, st, n.LHS, nr)
+			tmp, err := Walk(childCtx, v, st, n.LHS, nr)
+			if err == nil {
+				n.LHS = tmp.(Expr)
+			}
 			doneChan <- err
 		}()
 		go func() {
-			_, err := Walk(childCtx, v, st, n.RHS, nr)
+			tmp, err := Walk(childCtx, v, st, n.RHS, nr)
+			if err == nil {
+				n.RHS = tmp.(Expr)
+			}
 			doneChan <- err
 		}()
 		x := 0
@@ -345,18 +363,24 @@ func Walk(ctx context.Context, v Visitor, st *EvalStmt, node Node, nr NodeReplac
 		}
 
 	case *Call:
-		if _, err := Walk(ctx, v, st, n.Args, nr); err != nil {
+		if tmp, err := Walk(ctx, v, st, n.Args, nr); err != nil {
 			return nil, err
+		} else {
+			n.Args = tmp.(Expressions)
 		}
 
 	case *ParenExpr:
-		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+		if tmp, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
 			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
 		}
 
 	case *UnaryExpr:
-		if _, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
+		if tmp, err := Walk(ctx, v, st, n.Expr, nr); err != nil {
 			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
 		}
 
 	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
