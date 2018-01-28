@@ -144,6 +144,10 @@ func (m *MatrixSelector) SetIterators(its []local.SeriesIterator) {
 	m.iterators = its
 }
 
+func (m *MatrixSelector) HasIterators() bool {
+	return m.iterators != nil && len(m.iterators) > 0
+}
+
 // NumberLiteral represents a number.
 type NumberLiteral struct {
 	Val model.SampleValue
@@ -179,6 +183,10 @@ type VectorSelector struct {
 
 func (v *VectorSelector) SetIterators(its []local.SeriesIterator) {
 	v.iterators = its
+}
+
+func (v *VectorSelector) HasIterators() bool {
+	return v.iterators != nil && len(v.iterators) > 0
 }
 
 func (e *AggregateExpr) Type() model.ValueType  { return model.ValVector }
