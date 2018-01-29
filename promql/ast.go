@@ -269,6 +269,13 @@ type Visitor interface {
 // w for each of the non-nil children of node, followed by a call of
 // w.Visit(nil).
 func Walk(ctx context.Context, v Visitor, st *EvalStmt, node Node, nr NodeReplacer) (Node, error) {
+	// Check if the context is closed already
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	if nr != nil {
 		replacement, err := nr(ctx, st, node)
 		if replacement != nil {
