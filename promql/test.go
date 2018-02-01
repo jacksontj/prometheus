@@ -77,6 +77,12 @@ func newTestFromFile(t testutil.T, filename string) (*Test, error) {
 	return NewTest(t, string(content))
 }
 
+// SetQueryEngine sets test's query engine
+func (t *Test) SetQueryEngine(e *Engine)  {
+	t.queryEngine = e
+}
+
+
 // QueryEngine returns the test's query engine.
 func (t *Test) QueryEngine() *Engine {
 	return t.queryEngine
