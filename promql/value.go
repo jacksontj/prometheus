@@ -14,10 +14,13 @@
 package promql
 
 import (
+    "time"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/mailru/easyjson/jwriter"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -76,6 +79,7 @@ func (s Scalar) MarshalJSON() ([]byte, error) {
 }
 
 // Series is a stream of data points belonging to a metric.
+//easyjson:json
 type Series struct {
 	Metric labels.Labels `json:"metric"`
 	Points []Point       `json:"values"`
@@ -100,10 +104,68 @@ func (p Point) String() string {
 	return fmt.Sprintf("%v @[%v]", v, p.T)
 }
 
+/*
 // MarshalJSON implements json.Marshaler.
 func (p Point) MarshalJSON() ([]byte, error) {
 	v := strconv.FormatFloat(p.V, 'f', -1, 64)
 	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
+}
+*/
+
+
+// MarshalJSON implements json.Marshaler.
+func (p Point) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	p.MarshalEasyJSON(&w)
+	return w.Buffer.BuildBytes(), w.Error
+}
+
+const (
+	// MinimumTick is the minimum supported time resolution. This has to be
+	// at least time.Second in order for the code below to work.
+	minimumTick = time.Millisecond
+	// second is the Time duration equivalent to one second.
+	second = int64(time.Second / minimumTick)
+)
+var secondDigitLen = len(strconv.FormatInt(second, 10)) - 1
+
+func (p Point) MarshalEasyJSON(w *jwriter.Writer) {
+	w.RawByte('[')
+
+// put the time there
+	timeStr := strconv.FormatInt(int64(p.T), 10)
+	lenDelta := secondDigitLen - len(timeStr)
+
+	// Put out anything before a decimal
+	if len(timeStr) > secondDigitLen {
+		w.RawString(timeStr[:len(timeStr)-secondDigitLen])
+	} else {
+		w.RawByte('0')
+	}
+
+	// pad (if needed)
+	if lenDelta > 0 {
+		// put the decimal there
+		w.RawByte('.')
+		w.RawString(strings.Repeat("0", lenDelta) + timeStr)
+	} else {
+		if timeStr[len(timeStr)-secondDigitLen:] != "000" {
+			// put the decimal there
+			w.RawByte('.')
+			w.RawString(timeStr[len(timeStr)-secondDigitLen:])
+		}
+	}
+	
+	w.RawByte(',')
+	
+	// Put the value
+	w.RawByte('"')
+	w.Buffer.EnsureSpace(20)
+	w.Buffer.Buf = strconv.AppendFloat(w.Buffer.Buf, float64(p.V), 'f', -1, 64)
+	w.RawByte('"')
+	
+	
+	w.RawByte(']')
 }
 
 // Sample is a single sample belonging to a metric.
@@ -142,6 +204,7 @@ func (vec Vector) String() string {
 
 // Matrix is a slice of Seriess that implements sort.Interface and
 // has a String method.
+//easyjson:json
 type Matrix []Series
 
 func (m Matrix) String() string {

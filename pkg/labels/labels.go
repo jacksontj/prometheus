@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/cespare/xxhash"
+	"github.com/mailru/easyjson/jwriter"
 )
 
 const sep = '\xff'
@@ -64,10 +65,35 @@ func (ls Labels) String() string {
 	return b.String()
 }
 
+/*
 // MarshalJSON implements json.Marshaler.
 func (ls Labels) MarshalJSON() ([]byte, error) {
 	return json.Marshal(ls.Map())
 }
+*/
+// MarshalJSON implements the json.Marshaler interface.
+func (l Labels) MarshalJSON() ([]byte, error) {
+	w := jwriter.Writer{}
+	l.MarshalEasyJSON(&w)
+	return w.Buffer.BuildBytes(), w.Error
+}
+
+func (l Labels) MarshalEasyJSON(w *jwriter.Writer) {
+	w.RawByte('{')
+	first := true
+	for _, v := range l {
+		if !first {
+			w.RawByte(',')
+		} else {
+			first = false
+		}
+		w.RawString(`"` + string(v.Name) + `"`)
+		w.RawByte(':')
+		w.RawString(`"` + string(v.Value) + `"`)
+	}
+	w.RawByte('}')
+}
+
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (ls *Labels) UnmarshalJSON(b []byte) error {
