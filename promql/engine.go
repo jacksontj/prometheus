@@ -168,6 +168,8 @@ type Engine struct {
 	metrics *engineMetrics
 	timeout time.Duration
 	gate    *queryGate
+	// TODO: use
+	NodeReplacer NodeReplacer
 }
 
 // NewEngine returns a new engine.
@@ -451,7 +453,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
-	Inspect(s.Expr, func(node Node, _ []Node) error {
+	// In this for Inspect parallelizes on BinaryExpr
+	l := sync.Mutex{}
+	Inspect(ctx, s, func(node Node, _ []Node) error {
+		l.Lock()
+		defer l.Unlock()
 		switch n := node.(type) {
 		case *VectorSelector:
 			if maxOffset < LookbackDelta {
@@ -469,7 +475,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			}
 		}
 		return nil
-	})
+	}, nil)
 
 	mint := s.Start.Add(-maxOffset)
 
@@ -478,44 +484,57 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		return nil, err
 	}
 
-	Inspect(s.Expr, func(node Node, path []Node) error {
-		var set storage.SeriesSet
+	n, err := Inspect(ctx, s, func(node Node, path []Node) error {
 		params := &storage.SelectParams{
 			Step: int64(s.Interval / time.Millisecond),
 		}
 
 		switch n := node.(type) {
 		case *VectorSelector:
-			params.Func = extractFuncFromPath(path)
+			if n.series == nil {
+				params.Func = extractFuncFromPath(path)
 
-			set, err = querier.Select(params, n.LabelMatchers...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
-			}
-			n.series, err = expandSeriesSet(ctx, set)
-			if err != nil {
-				// TODO(fabxc): use multi-error.
-				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return err
+				set, err := querier.Select(params, n.LabelMatchers...)
+				if err != nil {
+					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+					return err
+				}
+				n.series, err = expandSeriesSet(ctx, set)
+				if err != nil {
+					// TODO(fabxc): use multi-error.
+					level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
+					return err
+				}
 			}
 
 		case *MatrixSelector:
-			params.Func = extractFuncFromPath(path)
+			if n.series == nil {
+				params.Func = extractFuncFromPath(path)
 
-			set, err = querier.Select(params, n.LabelMatchers...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
-			}
-			n.series, err = expandSeriesSet(ctx, set)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return err
+				set, err := querier.Select(params, n.LabelMatchers...)
+				if err != nil {
+					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+					return err
+				}
+				n.series, err = expandSeriesSet(ctx, set)
+				if err != nil {
+					level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
+					return err
+				}
 			}
 		}
 		return nil
-	})
+	}, ng.NodeReplacer)
+
+	if err != nil {
+		return querier, err
+	}
+	if nTyped, ok := n.(Expr); ok {
+		s.Expr = nTyped
+	} else {
+		return querier, fmt.Errorf("Invalid statement return")
+	}
+
 	return querier, err
 }
 
