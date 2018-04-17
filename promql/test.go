@@ -79,8 +79,8 @@ func newTestFromFile(t testutil.T, filename string) (*Test, error) {
 }
 
 // SetQueryEngine sets test's query engine
-func (t *Test) SetQueryEngine(e *Engine) {
-	t.queryEngine = e
+func (t *Test) SetStorage(s storage.Storage) {
+	t.storage = s
 }
 
 // QueryEngine returns the test's query engine.
