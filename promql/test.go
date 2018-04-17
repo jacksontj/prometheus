@@ -84,6 +84,11 @@ func newTestFromFile(t testutil.T, filename string) (*Test, error) {
 	return NewTest(t, string(content))
 }
 
+// SetStorage sets test's storage
+func (t *Test) SetStorage(s storage.Storage) {
+	t.storage = s
+}
+
 // QueryEngine returns the test's query engine.
 func (t *Test) QueryEngine() *Engine {
 	return t.queryEngine
