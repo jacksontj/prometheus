@@ -505,18 +505,20 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 
 		switch n := node.(type) {
 		case *VectorSelector:
-			params.Func = extractFuncFromPath(path)
+			if n.series == nil {
+				params.Func = extractFuncFromPath(path)
 
-			set, err := querier.Select(params, n.LabelMatchers...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return false
-			}
-			n.series, err = expandSeriesSet(set)
-			if err != nil {
-				// TODO(fabxc): use multi-error.
-				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return false
+				set, err := querier.Select(params, n.LabelMatchers...)
+				if err != nil {
+					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+					return false
+				}
+				n.series, err = expandSeriesSet(set)
+				if err != nil {
+					// TODO(fabxc): use multi-error.
+					level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
+					return false
+				}
 			}
 			for _, s := range n.series {
 				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(LookbackDelta))
@@ -524,17 +526,19 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 			}
 
 		case *MatrixSelector:
-			params.Func = extractFuncFromPath(path)
+			if n.series == nil {
+				params.Func = extractFuncFromPath(path)
 
-			set, err := querier.Select(params, n.LabelMatchers...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return false
-			}
-			n.series, err = expandSeriesSet(set)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return false
+				set, err := querier.Select(params, n.LabelMatchers...)
+				if err != nil {
+					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+					return false
+				}
+				n.series, err = expandSeriesSet(set)
+				if err != nil {
+					level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
+					return false
+				}
 			}
 			for _, s := range n.series {
 				it := storage.NewBuffer(s.Iterator(), durationMilliseconds(n.Range))
