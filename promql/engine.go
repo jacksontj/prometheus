@@ -156,6 +156,8 @@ type Engine struct {
 	metrics *engineMetrics
 	timeout time.Duration
 	gate    *queryGate
+	// TODO: use
+	NodeReplacer NodeReplacer
 }
 
 // NewEngine returns a new engine.
@@ -469,7 +471,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
-	Inspect(s.Expr, func(node Node, _ []Node) bool {
+	Inspect(ctx, s, func(node Node, _ []Node) bool {
 		switch n := node.(type) {
 		case *VectorSelector:
 			if maxOffset < LookbackDelta {
@@ -487,7 +489,7 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 			}
 		}
 		return true
-	})
+	}, nil)
 
 	mint := s.Start.Add(-maxOffset)
 
@@ -496,7 +498,7 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 		return nil, err
 	}
 
-	Inspect(s.Expr, func(node Node, path []Node) bool {
+	n, err := Inspect(ctx, s, func(node Node, path []Node) bool {
 		params := &storage.SelectParams{
 			Step: int64(s.Interval / time.Millisecond),
 		}
@@ -540,7 +542,17 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 			}
 		}
 		return true
-	})
+	}, ng.NodeReplacer)
+
+	if err != nil {
+		return querier, err
+	}
+	if nTyped, ok := n.(Expr); ok {
+		s.Expr = nTyped
+	} else {
+		return querier, fmt.Errorf("Invalid statement return")
+	}
+
 	return querier, err
 }
 

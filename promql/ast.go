@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -137,6 +138,14 @@ type MatrixSelector struct {
 	iterators []*storage.BufferedSeriesIterator
 }
 
+func (m *MatrixSelector) SetSeries(series []storage.Series) {
+	m.series = series
+}
+
+func (m *MatrixSelector) HasSeries() bool {
+	return m.series != nil
+}
+
 // NumberLiteral represents a number.
 type NumberLiteral struct {
 	Val float64
@@ -169,6 +178,14 @@ type VectorSelector struct {
 	// The series iterators are populated at query preparation time.
 	series    []storage.Series
 	iterators []*storage.BufferedSeriesIterator
+}
+
+func (m *VectorSelector) SetSeries(series []storage.Series) {
+	m.series = series
+}
+
+func (m *VectorSelector) HasSeries() bool {
+	return m.series != nil
 }
 
 func (e *AggregateExpr) Type() ValueType  { return ValueTypeVector }
@@ -251,45 +268,128 @@ type Visitor interface {
 // w for each of the non-nil children of node, followed by a call of
 // w.Visit(nil).
 // As the tree is descended the path of previous nodes is provided.
-func Walk(v Visitor, node Node, path []Node) {
+func Walk(ctx context.Context, v Visitor, st *EvalStmt, node Node, path []Node, nr NodeReplacer) (Node, error) {
+	// Check if the context is closed already
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	if nr != nil {
+		replacement, err := nr(ctx, st, node)
+		if replacement != nil {
+			node = replacement
+		}
+		if err != nil {
+			return node, err
+		}
+
+	}
+
 	if v = v.Visit(node, path); v == nil {
-		return
+		return node, nil
 	}
 	path = append(path, node)
 
 	switch n := node.(type) {
 	case Statements:
-		for _, s := range n {
-			Walk(v, s, path)
+		for i, s := range n {
+			if tmp, err := Walk(ctx, v, st, s, path, nr); err != nil {
+				return nil, err
+			} else {
+				n[i] = tmp.(Statement)
+			}
 		}
 	case *AlertStmt:
-		Walk(v, n.Expr, path)
+		if tmp, err := Walk(ctx, v, st, n.Expr, path, nr); err != nil {
+			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
+		}
 
 	case *EvalStmt:
-		Walk(v, n.Expr, path)
+		if tmp, err := Walk(ctx, v, st, n.Expr, path, nr); err != nil {
+			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
+		}
 
 	case *RecordStmt:
-		Walk(v, n.Expr, path)
+		if tmp, err := Walk(ctx, v, st, n.Expr, path, nr); err != nil {
+			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
+		}
 
 	case Expressions:
-		for _, e := range n {
-			Walk(v, e, path)
+		for i, e := range n {
+			if tmp, err := Walk(ctx, v, st, e, path, nr); err != nil {
+				return nil, err
+			} else {
+				n[i] = tmp.(Expr)
+			}
+
 		}
 	case *AggregateExpr:
-		Walk(v, n.Expr, path)
+		if tmp, err := Walk(ctx, v, st, n.Expr, path, nr); err != nil {
+			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
+		}
 
 	case *BinaryExpr:
-		Walk(v, n.LHS, path)
-		Walk(v, n.RHS, path)
+		// Do BinaryExpr in parallel (since this is where the tree diverges
+		childCtx, childCancel := context.WithCancel(ctx)
+		defer childCancel()
+		doneChan := make(chan error, 2)
+		go func() {
+			tmp, err := Walk(childCtx, v, st, n.LHS, path, nr)
+			if err == nil {
+				n.LHS = tmp.(Expr)
+			}
+			doneChan <- err
+		}()
+		go func() {
+			tmp, err := Walk(childCtx, v, st, n.RHS, path, nr)
+			if err == nil {
+				n.RHS = tmp.(Expr)
+			}
+			doneChan <- err
+		}()
+		x := 0
+		for x < 2 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case err := <-doneChan:
+				if err != nil {
+					return nil, err
+				}
+				x++
+			}
+		}
 
 	case *Call:
-		Walk(v, n.Args, path)
+		if tmp, err := Walk(ctx, v, st, n.Args, path, nr); err != nil {
+			return nil, err
+		} else {
+			n.Args = tmp.(Expressions)
+		}
 
 	case *ParenExpr:
-		Walk(v, n.Expr, path)
+		if tmp, err := Walk(ctx, v, st, n.Expr, path, nr); err != nil {
+			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
+		}
 
 	case *UnaryExpr:
-		Walk(v, n.Expr, path)
+		if tmp, err := Walk(ctx, v, st, n.Expr, path, nr); err != nil {
+			return nil, err
+		} else {
+			n.Expr = tmp.(Expr)
+		}
 
 	case *MatrixSelector, *NumberLiteral, *StringLiteral, *VectorSelector:
 		// nothing to do
@@ -298,7 +398,8 @@ func Walk(v Visitor, node Node, path []Node) {
 		panic(fmt.Errorf("promql.Walk: unhandled node type %T", node))
 	}
 
-	v.Visit(nil, nil)
+	v.Visit(nil, path)
+	return node, nil
 }
 
 type inspector func(Node, []Node) bool
@@ -313,6 +414,8 @@ func (f inspector) Visit(node Node, path []Node) Visitor {
 // Inspect traverses an AST in depth-first order: It starts by calling
 // f(node, path); node must not be nil. If f returns true, Inspect invokes f
 // for all the non-nil children of node, recursively.
-func Inspect(node Node, f func(Node, []Node) bool) {
-	Walk(inspector(f), node, nil)
+func Inspect(ctx context.Context, s *EvalStmt, f func(Node, []Node) bool, nr NodeReplacer) (Node, error) {
+	return Walk(ctx, inspector(f), s, s.Expr, nil, nr)
 }
+
+type NodeReplacer func(context.Context, *EvalStmt, Node) (Node, error)
