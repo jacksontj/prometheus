@@ -347,20 +347,20 @@ func Walk(ctx context.Context, v Visitor, st *EvalStmt, node Node, path []Node, 
 		childCtx, childCancel := context.WithCancel(ctx)
 		defer childCancel()
 		doneChan := make(chan error, 2)
-		go func() {
+		go func(path []Node) {
 			tmp, err := Walk(childCtx, v, st, n.LHS, path, nr)
 			if err == nil {
 				n.LHS = tmp.(Expr)
 			}
 			doneChan <- err
-		}()
-		go func() {
+		}(append([]Node{}, path...))
+		go func(path []Node) {
 			tmp, err := Walk(childCtx, v, st, n.RHS, path, nr)
 			if err == nil {
 				n.RHS = tmp.(Expr)
 			}
 			doneChan <- err
-		}()
+		}(append([]Node{}, path...))
 		x := 0
 		for x < 2 {
 			select {

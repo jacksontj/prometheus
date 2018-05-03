@@ -471,7 +471,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
+	// In this for Inspect parallelizes on BinaryExpr
+	l := sync.Mutex{}
 	Inspect(ctx, s, func(node Node, _ []Node) error {
+		l.Lock()
+		defer l.Unlock()
 		switch n := node.(type) {
 		case *VectorSelector:
 			if maxOffset < LookbackDelta {
