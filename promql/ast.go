@@ -259,7 +259,7 @@ type VectorMatching struct {
 // If the result visitor w is not nil, Walk visits each of the children
 // of node with the visitor w, followed by a call of w.Visit(nil, nil).
 type Visitor interface {
-	Visit(node Node, path []Node) (w Visitor)
+	Visit(node Node, path []Node) (w Visitor, err error)
 }
 
 // Walk traverses an AST in depth-first order: It starts by calling
@@ -287,8 +287,12 @@ func Walk(ctx context.Context, v Visitor, st *EvalStmt, node Node, path []Node, 
 
 	}
 
-	if v = v.Visit(node, path); v == nil {
+	var err error
+	if v, err = v.Visit(node, path); v == nil {
 		return node, nil
+	}
+	if err != nil {
+		return node, err
 	}
 	path = append(path, node)
 
@@ -402,19 +406,20 @@ func Walk(ctx context.Context, v Visitor, st *EvalStmt, node Node, path []Node, 
 	return node, nil
 }
 
-type inspector func(Node, []Node) bool
+type inspector func(Node, []Node) error
 
-func (f inspector) Visit(node Node, path []Node) Visitor {
-	if f(node, path) {
-		return f
+func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
+	if err := f(node, path); err == nil {
+		return f, nil
+	} else {
+		return nil, err
 	}
-	return nil
 }
 
 // Inspect traverses an AST in depth-first order: It starts by calling
 // f(node, path); node must not be nil. If f returns true, Inspect invokes f
 // for all the non-nil children of node, recursively.
-func Inspect(ctx context.Context, s *EvalStmt, f func(Node, []Node) bool, nr NodeReplacer) (Node, error) {
+func Inspect(ctx context.Context, s *EvalStmt, f inspector, nr NodeReplacer) (Node, error) {
 	return Walk(ctx, inspector(f), s, s.Expr, nil, nr)
 }
 
