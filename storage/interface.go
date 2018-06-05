@@ -16,6 +16,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -63,8 +64,9 @@ type Querier interface {
 
 // SelectParams specifies parameters passed to data selections.
 type SelectParams struct {
-	Step int64  // Query step size in milliseconds.
-	Func string // String representation of surrounding function or aggregation.
+	Offset time.Duration // Ofset for this particular select
+	Step   int64         // Query step size in milliseconds.
+	Func   string        // String representation of surrounding function or aggregation.
 }
 
 // QueryableFunc is an adapter to allow the use of ordinary functions as
