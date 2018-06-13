@@ -206,11 +206,40 @@ func (g *Group) run(ctx context.Context) {
 		iterationDuration.Observe(time.Since(start).Seconds())
 		g.SetEvaluationTime(time.Since(start))
 	}
+
+    fmt.Println("group started", g.evaluationTime)
+    // If this has never run before, we should evaluate all rules back in time
+    if g.evaluationTime == 0 {
+	    prevRun := time.Now().Add(-g.interval)
+
+    	for _, rule := range g.rules {
+    	    r, ok := rule.(*AlertingRule)
+    	    if !ok {
+	            continue
+    	    }
+		    backTime := prevRun.Add(-time.Duration(r.holdDuration))
+		    for backTime.Before(prevRun) {
+		        // evaluate the rule
+                _, err := rule.Eval(ctx, backTime, g.opts.QueryFunc, g.opts.ExternalURL)
+                if err != nil {
+	                // Canceled queries are intentional termination of queries. This normally
+	                // happens on shutdown and thus we skip logging of any errors here.
+	                if _, ok := err.(promql.ErrQueryCanceled); !ok {
+		                level.Warn(g.logger).Log("msg", "Evaluating rule failed", "rule", rule, "err", err)
+	                }
+	                evalFailures.Inc()
+                }
+                backTime = backTime.Add(g.interval)
+            }
+    	}
+    }
+
 	lastTriggered := time.Now()
 	iter()
 
 	tick := time.NewTicker(g.interval)
 	defer tick.Stop()
+
 
 	for {
 		select {
@@ -221,6 +250,7 @@ func (g *Group) run(ctx context.Context) {
 			case <-g.done:
 				return
 			case <-tick.C:
+    fmt.Println("group tick", g.evaluationTime)
 				missed := (time.Since(lastTriggered).Nanoseconds() / g.interval.Nanoseconds()) - 1
 				if missed > 0 {
 					iterationsMissed.Add(float64(missed))

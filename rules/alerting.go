@@ -178,6 +178,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("evaluated alert", ts, r.vector, res)
 
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
