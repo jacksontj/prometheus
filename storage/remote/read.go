@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -48,6 +49,15 @@ func (q *querier) Select(p *storage.SelectParams, matchers ...*labels.Matcher) (
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("original", query)
+	fmt.Println("maxt-mint (in ms)", ((q.maxt - q.mint)/1000)/60 )
+	
+	newQuery, err := ToQuery(p.Start, p.End, matchers, p)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("new", newQuery)
+	fmt.Println("end-start (in minuntes)", ((p.End - p.Start)/1000)/60 )
 
 	res, err := q.client.Read(q.ctx, query)
 	if err != nil {
