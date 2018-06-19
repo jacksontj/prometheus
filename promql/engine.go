@@ -854,6 +854,11 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 	)
 
 	for i, it := range node.iterators {
+		// check for timeout/cancellation here.
+		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+			ev.error(err)
+		}
+
 		start := len(allPoints)
 
 		ss := Series{
