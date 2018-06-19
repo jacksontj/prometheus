@@ -510,7 +510,7 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
 				return false
 			}
-			n.series, err = expandSeriesSet(set)
+			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
 				// TODO(fabxc): use multi-error.
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
@@ -529,7 +529,7 @@ func (ng *Engine) populateIterators(ctx context.Context, q storage.Queryable, s 
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
 				return false
 			}
-			n.series, err = expandSeriesSet(set)
+			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
 				return false
@@ -563,8 +563,13 @@ func extractFuncFromPath(p []Node) string {
 	return extractFuncFromPath(p[:len(p)-1])
 }
 
-func expandSeriesSet(it storage.SeriesSet) (res []storage.Series, err error) {
+func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.Series, err error) {
 	for it.Next() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
 		res = append(res, it.At())
 	}
 	return res, it.Err()
