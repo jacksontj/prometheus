@@ -1039,6 +1039,9 @@ func (ev *evaluator) matrixSelector(node *MatrixSelector) Matrix {
 
 	var it *storage.BufferedSeriesIterator
 	for i, s := range node.series {
+		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
+			ev.error(err)
+		}
 		if it == nil {
 			it = storage.NewBuffer(s.Iterator(), durationMilliseconds(node.Range))
 		} else {
