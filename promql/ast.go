@@ -288,10 +288,7 @@ func Walk(ctx context.Context, v Visitor, st *EvalStmt, node Node, path []Node, 
 	}
 
 	var err error
-	if v, err = v.Visit(node, path); v == nil {
-		return node, nil
-	}
-	if err != nil {
+	if v, err = v.Visit(node, path); v == nil || err != nil {
 		return node, err
 	}
 	path = append(path, node)
