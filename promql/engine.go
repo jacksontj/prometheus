@@ -451,7 +451,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *EvalStmt) (
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, error) {
 	var maxOffset time.Duration
-	Inspect(s.Expr, func(node Node, _ []Node) bool {
+	Inspect(s.Expr, func(node Node, _ []Node) error {
 		switch n := node.(type) {
 		case *VectorSelector:
 			if maxOffset < LookbackDelta {
@@ -468,7 +468,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				maxOffset = n.Offset + n.Range
 			}
 		}
-		return true
+		return nil
 	})
 
 	mint := s.Start.Add(-maxOffset)
@@ -478,7 +478,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		return nil, err
 	}
 
-	Inspect(s.Expr, func(node Node, path []Node) bool {
+	Inspect(s.Expr, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		params := &storage.SelectParams{
 			Step: int64(s.Interval / time.Millisecond),
@@ -491,13 +491,13 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return false
+				return err
 			}
 			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
 				// TODO(fabxc): use multi-error.
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return false
+				return err
 			}
 
 		case *MatrixSelector:
@@ -506,15 +506,15 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			set, err = querier.Select(params, n.LabelMatchers...)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return false
+				return err
 			}
 			n.series, err = expandSeriesSet(ctx, set)
 			if err != nil {
 				level.Error(ng.logger).Log("msg", "error expanding series set", "err", err)
-				return false
+				return err
 			}
 		}
-		return true
+		return nil
 	})
 	return querier, err
 }
@@ -1401,9 +1401,9 @@ func scalarBinop(op ItemType, lhs, rhs float64) float64 {
 	case itemDIV:
 		return lhs / rhs
 	case itemPOW:
-		return math.Pow(float64(lhs), float64(rhs))
+		return math.Pow(lhs, rhs)
 	case itemMOD:
-		return math.Mod(float64(lhs), float64(rhs))
+		return math.Mod(lhs, rhs)
 	case itemEQL:
 		return btos(lhs == rhs)
 	case itemNEQ:
@@ -1432,9 +1432,9 @@ func vectorElemBinop(op ItemType, lhs, rhs float64) (float64, bool) {
 	case itemDIV:
 		return lhs / rhs, true
 	case itemPOW:
-		return math.Pow(float64(lhs), float64(rhs)), true
+		return math.Pow(lhs, rhs), true
 	case itemMOD:
-		return math.Mod(float64(lhs), float64(rhs)), true
+		return math.Mod(lhs, rhs), true
 	case itemEQL:
 		return lhs, lhs == rhs
 	case itemNEQ:
@@ -1510,7 +1510,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			lb.Del(labels.MetricName)
 		}
 		if op == itemCountValues {
-			lb.Set(valueLabel, strconv.FormatFloat(float64(s.V), 'f', -1, 64))
+			lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
 		}
 
 		var (
@@ -1578,12 +1578,12 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			group.groupCount++
 
 		case itemMax:
-			if group.value < s.V || math.IsNaN(float64(group.value)) {
+			if group.value < s.V || math.IsNaN(group.value) {
 				group.value = s.V
 			}
 
 		case itemMin:
-			if group.value > s.V || math.IsNaN(float64(group.value)) {
+			if group.value > s.V || math.IsNaN(group.value) {
 				group.value = s.V
 			}
 
@@ -1596,7 +1596,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			group.groupCount++
 
 		case itemTopK:
-			if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(float64(group.heap[0].V)) {
+			if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(group.heap[0].V) {
 				if int64(len(group.heap)) == k {
 					heap.Pop(&group.heap)
 				}
@@ -1607,7 +1607,7 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			}
 
 		case itemBottomK:
-			if int64(len(group.reverseHeap)) < k || group.reverseHeap[0].V > s.V || math.IsNaN(float64(group.reverseHeap[0].V)) {
+			if int64(len(group.reverseHeap)) < k || group.reverseHeap[0].V > s.V || math.IsNaN(group.reverseHeap[0].V) {
 				if int64(len(group.reverseHeap)) == k {
 					heap.Pop(&group.reverseHeap)
 				}
@@ -1635,12 +1635,12 @@ func (ev *evaluator) aggregation(op ItemType, grouping []string, without bool, p
 			aggr.value = float64(aggr.groupCount)
 
 		case itemStdvar:
-			avg := float64(aggr.value) / float64(aggr.groupCount)
-			aggr.value = float64(aggr.valuesSquaredSum)/float64(aggr.groupCount) - avg*avg
+			avg := aggr.value / float64(aggr.groupCount)
+			aggr.value = aggr.valuesSquaredSum/float64(aggr.groupCount) - avg*avg
 
 		case itemStddev:
-			avg := float64(aggr.value) / float64(aggr.groupCount)
-			aggr.value = math.Sqrt(float64(aggr.valuesSquaredSum)/float64(aggr.groupCount) - avg*avg)
+			avg := aggr.value / float64(aggr.groupCount)
+			aggr.value = math.Sqrt(aggr.valuesSquaredSum/float64(aggr.groupCount) - avg*avg)
 
 		case itemTopK:
 			// The heap keeps the lowest value on top, so reverse it.
