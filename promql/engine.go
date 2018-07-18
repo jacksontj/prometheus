@@ -486,7 +486,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 	n, err := Inspect(ctx, s, func(node Node, path []Node) error {
 		params := &storage.SelectParams{
-			Start: timestamp.FromTime(s.Start.Add(-LookbackDelta)),
+			Start: timestamp.FromTime(s.Start),
 			End:   timestamp.FromTime(s.End),
 			Step:  int64(s.Interval / time.Millisecond),
 		}
@@ -494,6 +494,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 		switch n := node.(type) {
 		case *VectorSelector:
 			if n.series == nil {
+				params.Start = params.Start - durationMilliseconds(LookbackDelta)
 				params.Func = extractFuncFromPath(path)
 				if n.Offset > 0 {
 					offsetMilliseconds := durationMilliseconds(n.Offset)
