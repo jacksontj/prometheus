@@ -216,6 +216,7 @@ type Engine struct {
 	timeout            time.Duration
 	gate               *gate.Gate
 	maxSamplesPerQuery int
+	NodeReplacer       NodeReplacer
 }
 
 // NewEngine returns a new engine.
@@ -513,7 +514,10 @@ func (ng *Engine) cumulativeSubqueryOffset(path []Node) time.Duration {
 
 func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *EvalStmt) (storage.Querier, storage.Warnings, error) {
 	var maxOffset time.Duration
-	Inspect(s.Expr, func(node Node, path []Node) error {
+	l := sync.Mutex{}
+	Inspect(ctx, s, func(node Node, path []Node) error {
+		l.Lock()
+		defer l.Unlock()
 		subqOffset := ng.cumulativeSubqueryOffset(path)
 		switch n := node.(type) {
 		case *VectorSelector:
@@ -532,7 +536,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 			}
 		}
 		return nil
-	})
+	}, nil)
 
 	mint := s.Start.Add(-maxOffset)
 
@@ -543,7 +547,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 	var warnings storage.Warnings
 
-	Inspect(s.Expr, func(node Node, path []Node) error {
+	n, err := Inspect(ctx, s, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		var wrn storage.Warnings
 		params := &storage.SelectParams{
@@ -562,43 +566,57 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 
 		switch n := node.(type) {
 		case *VectorSelector:
-			params.Start = params.Start - durationMilliseconds(LookbackDelta)
-			params.Func = extractFuncFromPath(path)
-			if n.Offset > 0 {
-				offsetMilliseconds := durationMilliseconds(n.Offset)
-				params.Start = params.Start - offsetMilliseconds
-				params.End = params.End - offsetMilliseconds
-			}
+			if n.series == nil {
+				params.Start = params.Start - durationMilliseconds(LookbackDelta)
+				params.Func = extractFuncFromPath(path)
+				if n.Offset > 0 {
+					offsetMilliseconds := durationMilliseconds(n.Offset)
+					params.Start = params.Start - offsetMilliseconds
+					params.End = params.End - offsetMilliseconds
+				}
 
-			set, wrn, err = querier.Select(params, n.LabelMatchers...)
-			warnings = append(warnings, wrn...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
+				set, wrn, err = querier.Select(params, n.LabelMatchers...)
+				warnings = append(warnings, wrn...)
+				if err != nil {
+					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+					return err
+				}
+				n.unexpandedSeriesSet = set
 			}
-			n.unexpandedSeriesSet = set
 
 		case *MatrixSelector:
-			params.Func = extractFuncFromPath(path)
-			// For all matrix queries we want to ensure that we have (end-start) + range selected
-			// this way we have `range` data before the start time
-			params.Start = params.Start - durationMilliseconds(n.Range)
-			if n.Offset > 0 {
-				offsetMilliseconds := durationMilliseconds(n.Offset)
-				params.Start = params.Start - offsetMilliseconds
-				params.End = params.End - offsetMilliseconds
-			}
+			if n.series == nil {
+				params.Func = extractFuncFromPath(path)
+				// For all matrix queries we want to ensure that we have (end-start) + range selected
+				// this way we have `range` data before the start time
+				params.Start = params.Start - durationMilliseconds(n.Range)
+				if n.Offset > 0 {
+					offsetMilliseconds := durationMilliseconds(n.Offset)
+					params.Start = params.Start - offsetMilliseconds
+					params.End = params.End - offsetMilliseconds
+				}
 
-			set, wrn, err = querier.Select(params, n.LabelMatchers...)
-			warnings = append(warnings, wrn...)
-			if err != nil {
-				level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
-				return err
+				set, wrn, err = querier.Select(params, n.LabelMatchers...)
+				warnings = append(warnings, wrn...)
+				if err != nil {
+					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
+					return err
+				}
+				n.unexpandedSeriesSet = set
 			}
-			n.unexpandedSeriesSet = set
 		}
 		return nil
-	})
+	}, ng.NodeReplacer)
+
+	if err != nil {
+		return querier, warnings, err
+	}
+	if nTyped, ok := n.(Expr); ok {
+		s.Expr = nTyped
+	} else {
+		return querier, warnings, fmt.Errorf("Invalid statement return")
+	}
+
 	return querier, warnings, err
 }
 
