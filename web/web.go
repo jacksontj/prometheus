@@ -373,6 +373,14 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func (h *Handler) GetRouter() *route.Router {
+	return h.router
+}
+
+func (h *Handler) Getv1API() *api_v1.API {
+	return h.apiV1
+}
+
 // Ready sets Handler to be ready.
 func (h *Handler) Ready() {
 	atomic.StoreUint32(&h.ready, 1)
