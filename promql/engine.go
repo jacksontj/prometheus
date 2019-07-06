@@ -576,6 +576,8 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				}
 
 				set, wrn, err = querier.Select(params, n.LabelMatchers...)
+				l.Lock()
+				defer l.Unlock()
 				warnings = append(warnings, wrn...)
 				if err != nil {
 					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
@@ -583,6 +585,8 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				}
 				n.unexpandedSeriesSet = set
 			} else {
+				l.Lock()
+				defer l.Unlock()
 				warnings = append(warnings, n.warnings...)
 			}
 
@@ -599,6 +603,8 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				}
 
 				set, wrn, err = querier.Select(params, n.LabelMatchers...)
+				l.Lock()
+				defer l.Unlock()
 				warnings = append(warnings, wrn...)
 				if err != nil {
 					level.Error(ng.logger).Log("msg", "error selecting series set", "err", err)
@@ -606,6 +612,8 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 				}
 				n.unexpandedSeriesSet = set
 			} else {
+				l.Lock()
+				defer l.Unlock()
 				warnings = append(warnings, n.warnings...)
 			}
 		}
