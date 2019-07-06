@@ -550,6 +550,7 @@ func (ng *Engine) populateSeries(ctx context.Context, q storage.Queryable, s *Ev
 	n, err := Inspect(ctx, s, func(node Node, path []Node) error {
 		var set storage.SeriesSet
 		var wrn storage.Warnings
+		var err error
 		params := &storage.SelectParams{
 			Start: timestamp.FromTime(s.Start),
 			End:   timestamp.FromTime(s.End),
