@@ -1781,10 +1781,6 @@ func TestRecoverParserRuntime(t *testing.T) {
 		if err != errUnexpected {
 			t.Fatalf("wrong error message: %q, expected %q", err, errUnexpected)
 		}
-
-		if _, ok := <-p.lex.items; ok {
-			t.Fatalf("lex.items was not closed")
-		}
 	}()
 	defer p.recover(&err)
 	// Cause a runtime panic.
