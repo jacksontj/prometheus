@@ -162,7 +162,11 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 	}
 
 	m, added := q.addExternalLabels(matchers)
-	query, err := ToQuery(q.mint, q.maxt, m, hints)
+	start, end := q.mint, q.maxt
+	if hints != nil {
+		start, end = hints.Start, hints.End
+	}
+	query, err := ToQuery(start, end, m, hints)
 	if err != nil {
 		return storage.ErrSeriesSet(errors.Wrap(err, "toQuery"))
 	}
