@@ -222,6 +222,7 @@ type Engine struct {
 	queryLoggerLock          sync.RWMutex
 	lookbackDelta            time.Duration
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
+	NodeReplacer             parser.NodeReplacer
 }
 
 // NewEngine returns a new engine.
@@ -594,7 +595,7 @@ func (ng *Engine) subqueryOffsetRange(path []parser.Node) (time.Duration, time.D
 
 func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 	var maxOffset time.Duration
-	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(context.TODO(), s, func(node parser.Node, path []parser.Node) error {
 		subqOffset, subqRange := ng.subqueryOffsetRange(path)
 		switch n := node.(type) {
 		case *parser.VectorSelector:
@@ -613,7 +614,7 @@ func (ng *Engine) findMinTime(s *parser.EvalStmt) time.Time {
 			}
 		}
 		return nil
-	})
+	}, nil)
 	return s.Start.Add(-maxOffset)
 }
 
@@ -622,10 +623,16 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
+	l := sync.Mutex{}
 
-	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+	n, err := parser.Inspect(context.TODO(), s, func(node parser.Node, path []parser.Node) error {
+		l.Lock()
+		defer l.Unlock()
 		switch n := node.(type) {
 		case *parser.VectorSelector:
+			if n.UnexpandedSeriesSet != nil {
+				return nil
+			}
 			hints := &storage.SelectHints{
 				Start: timestamp.FromTime(s.Start),
 				End:   timestamp.FromTime(s.End),
@@ -664,7 +671,15 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			evalRange = n.Range
 		}
 		return nil
-	})
+	}, ng.NodeReplacer)
+
+	if err != nil {
+		panic(err)
+	}
+
+	if nTyped, ok := n.(parser.Expr); ok {
+		s.Expr = nTyped
+	}
 }
 
 // extractFuncFromPath walks up the path and searches for the first instance of
