@@ -55,7 +55,7 @@ type Test struct {
 
 	cmds []testCommand
 
-	storage *teststorage.TestStorage
+	storage storage.Storage
 
 	queryEngine *Engine
 	context     context.Context
@@ -109,7 +109,7 @@ func (t *Test) Storage() storage.Storage {
 
 // TSDB returns test's TSDB.
 func (t *Test) TSDB() *tsdb.DB {
-	return t.storage.DB
+	return t.storage.(*teststorage.TestStorage).DB
 }
 
 func raise(line int, format string, v ...interface{}) error {
