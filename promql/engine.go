@@ -1654,7 +1654,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 
 	if !ok || t > refTime {
 		t, v, ok = it.PeekPrev()
-		if !ok || t < refTime-durationMilliseconds(ev.lookbackDelta) {
+		if !ok || t < refTime-durationMilliseconds(node.GetLookbackDelta(ev.lookbackDelta)) {
 			return 0, 0, false
 		}
 	}
