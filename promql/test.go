@@ -50,6 +50,11 @@ const (
 
 var testStartTime = time.Unix(0, 0).UTC()
 
+type testStorageSet struct {
+	storage.Storage
+    storage.ExemplarStorage
+}
+
 // Test is a sequence of read and write commands that are run
 // against a test storage.
 type Test struct {
@@ -57,7 +62,7 @@ type Test struct {
 
 	cmds []testCommand
 
-	storage *teststorage.TestStorage
+	storage testStorageSet
 
 	queryEngine *Engine
 	context     context.Context
@@ -86,7 +91,11 @@ func newTestFromFile(t testutil.T, filename string) (*Test, error) {
 
 // SetStorage sets test's storage
 func (t *Test) SetStorage(s storage.Storage) {
-	t.storage = s
+	t.storage.Storage = s
+}
+
+func (t *Test) SetExemplarStorage(s storage.ExemplarStorage) {
+	t.storage.ExemplarStorage = s
 }
 
 // QueryEngine returns the test's query engine.
@@ -111,16 +120,16 @@ func (t *Test) Storage() storage.Storage {
 
 // TSDB returns test's TSDB.
 func (t *Test) TSDB() *tsdb.DB {
-	return t.storage.DB
+	return t.storage.Storage.(*teststorage.TestStorage).DB
 }
 
 // ExemplarStorage returns the test's exemplar storage.
 func (t *Test) ExemplarStorage() storage.ExemplarStorage {
-	return t.storage
+	return t.storage.ExemplarStorage
 }
 
 func (t *Test) ExemplarQueryable() storage.ExemplarQueryable {
-	return t.storage.ExemplarQueryable()
+	return t.storage.ExemplarStorage
 }
 
 func raise(line int, format string, v ...interface{}) error {
@@ -461,7 +470,7 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 	// Setting the @ timestamp for all selectors to be evalTime.
 	// If there is a subquery, then the selectors inside it don't get the @ timestamp.
 	// If any selector already has the @ timestamp set, then it is untouched.
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(context.TODO(),  &parser.EvalStmt{Expr: expr}, func(node parser.Node, path []parser.Node) error {
 		_, _, subqTs := subqueryTimes(path)
 		if subqTs != nil {
 			// There is a subquery with timestamp in the path,
@@ -489,7 +498,7 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 			containsNonStepInvariant = containsNonStepInvariant || ok
 		}
 		return nil
-	})
+	}, nil)
 
 	if containsNonStepInvariant {
 		// Since there is a step invariant function, we cannot automatically
@@ -601,15 +610,15 @@ func (t *Test) exec(tc testCommand) error {
 
 // clear the current test storage of all inserted samples.
 func (t *Test) clear() {
-	if t.storage != nil {
-		if err := t.storage.Close(); err != nil {
+	if t.storage.Storage != nil {
+		if err := t.storage.Storage.Close(); err != nil {
 			t.T.Fatalf("closing test storage: %s", err)
 		}
 	}
 	if t.cancelCtx != nil {
 		t.cancelCtx()
 	}
-	t.storage = teststorage.New(t)
+	t.storage.Storage = teststorage.New(t)
 
 	opts := EngineOpts{
 		Logger:                   nil,

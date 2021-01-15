@@ -231,6 +231,7 @@ type Engine struct {
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableAtModifier         bool
 	enableNegativeOffset     bool
+	NodeReplacer             parser.NodeReplacer
 }
 
 // NewEngine returns a new engine.
@@ -374,15 +375,14 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 }
 
 func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end time.Time, interval time.Duration) (*query, error) {
-	if err := ng.validateOpts(expr); err != nil {
-		return nil, err
-	}
-
 	es := &parser.EvalStmt{
 		Expr:     PreprocessExpr(expr, start, end),
 		Start:    start,
 		End:      end,
 		Interval: interval,
+	}
+	if err := ng.validateOpts(es); err != nil {
+		return nil, err
 	}
 	qry := &query{
 		stmt:      es,
@@ -396,7 +396,7 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 var ErrValidationAtModifierDisabled = errors.New("@ modifier is disabled")
 var ErrValidationNegativeOffsetDisabled = errors.New("negative offset is disabled")
 
-func (ng *Engine) validateOpts(expr parser.Expr) error {
+func (ng *Engine) validateOpts(expr *parser.EvalStmt) error {
 	if ng.enableAtModifier && ng.enableNegativeOffset {
 		return nil
 	}
@@ -404,7 +404,7 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	var atModifierUsed, negativeOffsetUsed bool
 
 	var validationErr error
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(context.TODO(), expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
@@ -442,7 +442,7 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 		}
 
 		return nil
-	})
+	}, nil)
 
 	return validationErr
 }
@@ -690,7 +690,7 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
-	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(context.TODO(), s, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
@@ -706,7 +706,7 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 			evalRange = n.Range
 		}
 		return nil
-	})
+	}, nil)
 
 	if maxTimestamp == math.MinInt64 {
 		// This happens when there was no selector. Hence no time range to select.
@@ -757,10 +757,16 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
+	l := sync.Mutex{}
 
-	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+	n, err := parser.Inspect(context.TODO(), s, func(node parser.Node, path []parser.Node) error {
+		l.Lock()
+		defer l.Unlock()
 		switch n := node.(type) {
 		case *parser.VectorSelector:
+			if n.UnexpandedSeriesSet != nil {
+				return nil
+			}
 			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
 			hints := &storage.SelectHints{
 				Start: start,
@@ -777,7 +783,15 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			evalRange = n.Range
 		}
 		return nil
-	})
+	}, ng.NodeReplacer)
+
+	if err != nil {
+		panic(err)
+	}
+
+	if nTyped, ok := n.(parser.Expr); ok {
+		s.Expr = nTyped
+	}
 }
 
 // extractFuncFromPath walks up the path and searches for the first instance of
@@ -2542,7 +2556,7 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 		return originalOffset + offsetDiff
 	}
 
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(context.TODO(), &parser.EvalStmt{Expr: expr}, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, path)
@@ -2555,7 +2569,7 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, path)
 		}
 		return nil
-	})
+	}, nil)
 }
 
 func makeInt64Pointer(val int64) *int64 {
