@@ -347,6 +347,7 @@ type Engine struct {
 	enablePerStepStats       bool
 	enableDelayedNameRemoval bool
 	enableTypeAndUnitLabels  bool
+	NodeReplacer             parser.NodeReplacer
 }
 
 // NewEngine returns a new engine.
@@ -481,7 +482,10 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
 func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, ts time.Time) (Query, error) {
-	pExpr, qry := ng.newQuery(q, qs, opts, ts, ts, 0)
+	pExpr, qry, err := ng.newQuery(q, qs, opts, ts, ts, 0)
+	if err != nil {
+		return nil, err
+	}
 	finishQueue, err := ng.queueActive(ctx, qry)
 	if err != nil {
 		return nil, err
@@ -491,9 +495,11 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 	if err != nil {
 		return nil, err
 	}
+	/* TODO: re-add
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
+	*/
 	*pExpr, err = PreprocessExpr(expr, ts, ts)
 
 	return qry, err
@@ -502,7 +508,10 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
 func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
-	pExpr, qry := ng.newQuery(q, qs, opts, start, end, interval)
+	pExpr, qry, err := ng.newQuery(q, qs, opts, start, end, interval)
+	if err != nil {
+		return nil, err
+	}
 	finishQueue, err := ng.queueActive(ctx, qry)
 	if err != nil {
 		return nil, err
@@ -512,9 +521,10 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	if err != nil {
 		return nil, err
 	}
+	/* TODO: re-add
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
-	}
+	}*/
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
@@ -523,7 +533,7 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	return qry, err
 }
 
-func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query) {
+func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start, end time.Time, interval time.Duration) (*parser.Expr, *query, error) {
 	if opts == nil {
 		opts = NewPrometheusQueryOpts(false, 0)
 	}
@@ -539,6 +549,11 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 		Interval:      interval,
 		LookbackDelta: lookbackDelta,
 	}
+
+	if err := ng.validateOpts(es); err != nil {
+		return nil, nil, err
+	}
+
 	qry := &query{
 		q:           qs,
 		stmt:        es,
@@ -547,7 +562,7 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 		sampleStats: stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats()),
 		queryable:   q,
 	}
-	return &es.Expr, qry
+	return &es.Expr, qry, nil
 }
 
 var (
@@ -555,7 +570,7 @@ var (
 	ErrValidationNegativeOffsetDisabled = errors.New("negative offset is disabled")
 )
 
-func (ng *Engine) validateOpts(expr parser.Expr) error {
+func (ng *Engine) validateOpts(expr *parser.EvalStmt) error {
 	if ng.enableAtModifier && ng.enableNegativeOffset {
 		return nil
 	}
@@ -563,7 +578,7 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	var atModifierUsed, negativeOffsetUsed bool
 
 	var validationErr error
-	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+	parser.Inspect(context.TODO(), expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
@@ -601,7 +616,7 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 		}
 
 		return nil
-	})
+	}, nil)
 
 	return validationErr
 }
@@ -880,7 +895,7 @@ func FindMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
-	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(context.TODO(), s, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			start, end := getTimeRangesForSelector(s, n, path, evalRange)
@@ -895,7 +910,7 @@ func FindMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 			evalRange = n.Range
 		}
 		return nil
-	})
+	}, nil)
 
 	if maxTimestamp == math.MinInt64 {
 		// This happens when there was no selector. Hence no time range to select.
@@ -965,10 +980,16 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
+	l := sync.Mutex{}
 
-	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
+	n, err := parser.Inspect(ctx, s, func(node parser.Node, path []parser.Node) error {
+		l.Lock()
+		defer l.Unlock()
 		switch n := node.(type) {
 		case *parser.VectorSelector:
+			if n.UnexpandedSeriesSet != nil {
+				return nil
+			}
 			start, end := getTimeRangesForSelector(s, n, path, evalRange)
 			interval := ng.getLastSubqueryInterval(path)
 			if interval == 0 {
@@ -989,7 +1010,15 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			evalRange = n.Range
 		}
 		return nil
-	})
+	}, ng.NodeReplacer)
+
+	if err != nil {
+		panic(err)
+	}
+
+	if nTyped, ok := n.(parser.Expr); ok {
+		s.Expr = nTyped
+	}
 }
 
 // extractFuncFromPath walks up the path and searches for the first instance of
@@ -3733,7 +3762,7 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 func PreprocessExpr(expr parser.Expr, start, end time.Time) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
 
-	if err := parser.Walk(&durationVisitor{}, expr, nil); err != nil {
+	if _, err := parser.Walk(context.TODO(), &durationVisitor{}, &parser.EvalStmt{Expr: expr}, nil, nil, nil); err != nil {
 		return nil, err
 	}
 
@@ -3855,7 +3884,7 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 		return originalOffset + offsetDiff
 	}
 
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(context.TODO(), &parser.EvalStmt{Expr: expr}, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, path)
@@ -3868,7 +3897,7 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, path)
 		}
 		return nil
-	})
+	}, nil)
 }
 
 // detectHistogramStatsDecoding modifies the expression by setting the
@@ -3877,7 +3906,7 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 // and buckets. The function can be treated as an optimization and is not
 // required for correctness.
 func detectHistogramStatsDecoding(expr parser.Expr) {
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	parser.Inspect(context.TODO(), &parser.EvalStmt{Expr: expr}, func(node parser.Node, path []parser.Node) error {
 		n, ok := (node).(*parser.VectorSelector)
 		if !ok {
 			return nil
@@ -3899,7 +3928,7 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 			break
 		}
 		return errors.New("stop")
-	})
+	}, nil)
 }
 
 func makeInt64Pointer(val int64) *int64 {
