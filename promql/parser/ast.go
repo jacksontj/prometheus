@@ -208,6 +208,7 @@ func (*AggregateExpr) PromQLExpr()  {}
 func (*BinaryExpr) PromQLExpr()     {}
 func (*Call) PromQLExpr()           {}
 func (*MatrixSelector) PromQLExpr() {}
+func (*RawMatrix) PromQLExpr()      {}
 func (*SubqueryExpr) PromQLExpr()   {}
 func (*NumberLiteral) PromQLExpr()  {}
 func (*ParenExpr) PromQLExpr()      {}
@@ -411,7 +412,7 @@ func Children(node Node) []Node {
 		return []Node{n.Expr}
 	case *MatrixSelector:
 		return []Node{n.VectorSelector}
-	case *NumberLiteral, *StringLiteral, *VectorSelector:
+	case *NumberLiteral, *StringLiteral, *VectorSelector, *RawMatrix:
 		// nothing to do
 		return []Node{}
 	default:

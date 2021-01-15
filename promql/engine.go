@@ -1321,6 +1321,25 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		}
 		return ev.matrixSelector(e)
 
+	case *parser.RawMatrix:
+		m := make(Matrix, len(e.Series))
+		for i, s := range e.Series {
+			m[i] = Series{
+				Metric: s.Labels(),
+				Points: make([]Point, 0, 10),
+			}
+			it := s.Iterator()
+			for it.Next() {
+				t, v := it.At()
+				m[i].Points = append(m[i].Points, Point{T: t, V: v})
+			}
+			if err := it.Err(); err != nil {
+				ev.error(err)
+				return nil, nil
+			}
+		}
+		return m, nil
+
 	case *parser.SubqueryExpr:
 		offsetMillis := durationMilliseconds(e.Offset)
 		rangeMillis := durationMilliseconds(e.Range)
