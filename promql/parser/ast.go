@@ -167,12 +167,21 @@ type VectorSelector struct {
 	Name          string
 	Offset        time.Duration
 	LabelMatchers []*labels.Matcher
+	LookbackDelta time.Duration
 
 	// The unexpanded seriesSet populated at query preparation time.
 	UnexpandedSeriesSet storage.SeriesSet
 	Series              []storage.Series
 
 	PosRange PositionRange
+}
+
+func (m *VectorSelector) GetLookbackDelta(d time.Duration) time.Duration {
+	if m.LookbackDelta > 0 {
+		return m.LookbackDelta
+	}
+
+	return d
 }
 
 // TestStmt is an internal helper statement that allows execution
