@@ -411,9 +411,12 @@ func (ng *Engine) validateOpts(expr *parser.EvalStmt) error {
 	}
 
 	var atModifierUsed, negativeOffsetUsed bool
+	var l sync.Mutex
 
 	var validationErr error
 	parser.Inspect(context.TODO(), expr, func(node parser.Node, path []parser.Node) error {
+		l.Lock()
+		defer l.Unlock()
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
@@ -700,7 +703,10 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
+	var l sync.Mutex
 	parser.Inspect(context.TODO(), s, func(node parser.Node, path []parser.Node) error {
+	    l.Lock()
+	    defer l.Unlock()
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
