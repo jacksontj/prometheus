@@ -5282,7 +5282,9 @@ func TestExtractSelectors(t *testing.T) {
 			expected = append(expected, selector)
 		}
 
-		require.Equal(t, expected, ExtractSelectors(expr))
+		// Fork: Walk parallelizes child traversal, so the order of selectors
+		// returned by ExtractSelectors is non-deterministic across binary expressions.
+		require.ElementsMatch(t, expected, ExtractSelectors(expr))
 	}
 }
 

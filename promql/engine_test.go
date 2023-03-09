@@ -615,7 +615,9 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			res := query.Exec(context.Background())
 			require.NoError(t, res.Err)
 
-			require.Equal(t, tc.expected, hintsRecorder.hints)
+			// Fork: parallel AST walking may visit independent selectors in
+			// non-deterministic order, so compare order-insensitively.
+			require.ElementsMatch(t, tc.expected, hintsRecorder.hints)
 		})
 	}
 }
