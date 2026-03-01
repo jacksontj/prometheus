@@ -544,10 +544,9 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 	}
 
 	es := &parser.EvalStmt{
-		Start:         start,
-		End:           end,
-		Interval:      interval,
-		LookbackDelta: lookbackDelta,
+		Start:    start,
+		End:      end,
+		Interval: interval,
 	}
 
 	if err := ng.validateOpts(es); err != nil {
@@ -731,7 +730,7 @@ func durationMilliseconds(d time.Duration) int64 {
 // execEvalStmt evaluates the expression of an evaluation statement for the given time range.
 func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.EvalStmt) (parser.Value, annotations.Annotations, error) {
 	prepareSpanTimer, ctxPrepare := query.stats.GetSpanTimer(ctx, stats.QueryPreparationTime, ng.metrics.queryPrepareTime)
-	mint, maxt := FindMinMaxTime(s)
+	mint, maxt := ng.findMinMaxTime(s)
 	querier, err := query.queryable.Querier(mint, maxt)
 	if err != nil {
 		prepareSpanTimer.Finish()
@@ -758,7 +757,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			interval:                 1,
 			maxSamples:               ng.maxSamplesPerQuery,
 			logger:                   ng.logger,
-			lookbackDelta:            s.LookbackDelta,
+			lookbackDelta:            ng.lookbackDelta,
 			samplesStats:             query.sampleStats,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 			enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
@@ -818,7 +817,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		interval:                 durationMilliseconds(s.Interval),
 		maxSamples:               ng.maxSamplesPerQuery,
 		logger:                   ng.logger,
-		lookbackDelta:            s.LookbackDelta,
+		lookbackDelta:            ng.lookbackDelta,
 		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		enableDelayedNameRemoval: ng.enableDelayedNameRemoval,
@@ -885,10 +884,10 @@ func subqueryTimes(path []parser.Node) (time.Duration, time.Duration, *int64) {
 	return subqOffset, subqRange, tsp
 }
 
-// FindMinMaxTime returns the time in milliseconds of the earliest and latest point in time the statement will try to process.
+// findMinMaxTime returns the time in milliseconds of the earliest and latest point in time the statement will try to process.
 // This takes into account offsets, @ modifiers, and range selectors.
-// If the statement does not select series, then FindMinMaxTime returns (0, 0).
-func FindMinMaxTime(s *parser.EvalStmt) (int64, int64) {
+// If the statement does not select series, then findMinMaxTime returns (0, 0).
+func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	var minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
@@ -908,7 +907,7 @@ func FindMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 			evalRange := findPathRange(path, ranges)
 			l.RUnlock()
 
-			start, end := getTimeRangesForSelector(s, n, path, evalRange)
+			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
 			l.Lock()
 			if start < minTimestamp {
 				minTimestamp = start
@@ -940,7 +939,7 @@ func FindMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	return minTimestamp, maxTimestamp
 }
 
-func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path []parser.Node, evalRange time.Duration) (int64, int64) {
+func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path []parser.Node, evalRange time.Duration) (int64, int64) {
 	start, end := timestamp.FromTime(s.Start), timestamp.FromTime(s.End)
 	subqOffset, subqRange, subqTs := subqueryTimes(path)
 
@@ -964,7 +963,7 @@ func getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorSelector, path
 		// Reduce the start by one fewer ms than the lookback delta
 		// because wo want to exclude samples that are precisely the
 		// lookback delta before the eval time.
-		start -= durationMilliseconds(s.LookbackDelta) - 1
+		start -= durationMilliseconds(n.GetLookbackDelta(ng.lookbackDelta)) - 1
 	} else {
 		// For all matrix queries we want to ensure that we have
 		// (end-start) + range selected this way we have `range` data
@@ -1015,7 +1014,7 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 			if n.UnexpandedSeriesSet != nil {
 				return nil
 			}
-			start, end := getTimeRangesForSelector(s, n, path, evalRange)
+			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
 			interval := ng.getLastSubqueryInterval(path)
 			if interval == 0 {
 				interval = s.Interval
