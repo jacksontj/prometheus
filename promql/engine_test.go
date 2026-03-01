@@ -297,10 +297,13 @@ type hintRecordingQuerier struct {
 	storage.Querier
 
 	h *noopHintRecordingQueryable
+	l sync.Mutex
 }
 
 func (h *hintRecordingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	h.l.Lock()
 	h.h.hints = append(h.h.hints, hints)
+	h.l.Unlock()
 	return h.Querier.Select(ctx, sortSeries, hints, matchers...)
 }
 
