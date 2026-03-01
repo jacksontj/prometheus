@@ -1472,6 +1472,14 @@ func (t *test) clear() {
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 
+// SetStorage sets the storage for the test.
+func (t *test) SetStorage(s storage.Storage) {
+	if t.storage != nil {
+		t.storage.Close()
+	}
+	t.storage = s
+}
+
 func parseNumber(s string) (float64, error) {
 	n, err := strconv.ParseInt(s, 0, 64)
 	f := float64(n)
