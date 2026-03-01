@@ -217,6 +217,7 @@ type VectorSelector struct {
 	SkipHistogramBuckets bool     // Set when decoding native histogram buckets is not needed for query evaluation.
 	StartOrEnd           ItemType // Set when @ is used with start() or end()
 	LabelMatchers        []*labels.Matcher
+	LookbackDelta        time.Duration
 
 	// The unexpanded seriesSet populated at query preparation time.
 	UnexpandedSeriesSet storage.SeriesSet
@@ -227,6 +228,13 @@ type VectorSelector struct {
 	BypassEmptyMatcherCheck bool
 
 	PosRange posrange.PositionRange
+}
+
+func (m *VectorSelector) GetLookbackDelta(d time.Duration) time.Duration {
+	if m.LookbackDelta > 0 {
+		return m.LookbackDelta
+	}
+	return d
 }
 
 // TestStmt is an internal helper statement that allows execution
