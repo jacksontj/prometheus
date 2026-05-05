@@ -495,11 +495,9 @@ func (ng *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts
 	if err != nil {
 		return nil, err
 	}
-	/* TODO: re-add
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
-	*/
 	*pExpr, err = PreprocessExpr(expr, ts, ts)
 
 	return qry, err
@@ -521,10 +519,9 @@ func (ng *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts Q
 	if err != nil {
 		return nil, err
 	}
-	/* TODO: re-add
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
-	}*/
+	}
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
@@ -550,10 +547,6 @@ func (ng *Engine) newQuery(q storage.Queryable, qs string, opts QueryOpts, start
 		LookbackDelta: lookbackDelta,
 	}
 
-	if err := ng.validateOpts(es); err != nil {
-		return nil, nil, err
-	}
-
 	qry := &query{
 		q:           qs,
 		stmt:        es,
@@ -570,12 +563,12 @@ var (
 	ErrValidationNegativeOffsetDisabled = errors.New("negative offset is disabled")
 )
 
-func (ng *Engine) validateOpts(expr *parser.EvalStmt) error {
+func (ng *Engine) validateOpts(expr parser.Expr) error {
 	if ng.enableAtModifier && ng.enableNegativeOffset {
 		return nil
 	}
 
-	_, err := parser.Inspect(context.TODO(), expr, func(node parser.Node, path []parser.Node) error {
+	_, err := parser.Inspect(context.TODO(), &parser.EvalStmt{Expr: expr}, func(node parser.Node, path []parser.Node) error {
 		var atModifierUsed, negativeOffsetUsed bool
 		switch n := node.(type) {
 		case *parser.VectorSelector:
@@ -3798,7 +3791,7 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 func PreprocessExpr(expr parser.Expr, start, end time.Time) (parser.Expr, error) {
 	detectHistogramStatsDecoding(expr)
 
-	if _, err := parser.Walk(context.TODO(), &durationVisitor{}, &parser.EvalStmt{Expr: expr}, nil, nil, nil); err != nil {
+	if _, err := parser.Walk(context.TODO(), &durationVisitor{}, &parser.EvalStmt{Expr: expr}, expr, nil, nil); err != nil {
 		return nil, err
 	}
 

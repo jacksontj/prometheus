@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -41,7 +42,7 @@ func TestDurationVisitor(t *testing.T) {
 	expr, err := parser.ParseExpr(complexExpr)
 	require.NoError(t, err)
 
-	err = parser.Walk(&durationVisitor{}, expr, nil)
+	_, err = parser.Walk(context.Background(), &durationVisitor{}, &parser.EvalStmt{Expr: expr}, expr, nil, nil)
 	require.NoError(t, err)
 
 	// Verify different parts of the expression have correct durations.
