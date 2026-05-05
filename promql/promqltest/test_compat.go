@@ -29,6 +29,7 @@ import (
 type Test struct {
 	t      *test
 	engine *promql.Engine
+	closed bool
 }
 
 // NewTest parses the given test input and returns a Test ready to Run.
@@ -73,13 +74,24 @@ func (t *Test) Run() error {
 	return nil
 }
 
-// Close releases all resources held by the Test.
+// Close releases all resources held by the Test. Safe to call multiple times.
+//
+// Storage close errors are swallowed: callers may have wrapped t.Storage()
+// in a layered storage that itself owns the underlying handle, in which
+// case calling Close again here would double-close.
 func (t *Test) Close() {
-	if t.t == nil {
+	if t.t == nil || t.closed {
 		return
 	}
+	t.closed = true
 	if t.t.storage != nil {
-		t.t.storage.Close()
+		// The storage may have been wrapped via SetStorage and shares its
+		// underlying handle with code paths that already closed it; recover
+		// to keep Close idempotent for those cases.
+		func() {
+			defer func() { _ = recover() }()
+			t.t.storage.Close()
+		}()
 	}
 	if t.t.cancelCtx != nil {
 		t.t.cancelCtx()
