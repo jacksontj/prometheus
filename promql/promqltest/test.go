@@ -1472,11 +1472,12 @@ func (t *test) clear() {
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 
-// SetStorage sets the storage for the test.
+// SetStorage swaps the storage for the test. The previous storage is NOT
+// closed: callers commonly wrap it in a layered storage that still needs
+// the underlying handle alive (for writes via Appender, or to preserve a
+// read path through the original tsdb). It is the caller's responsibility
+// to close the wrapped storage when done.
 func (t *test) SetStorage(s storage.Storage) {
-	if t.storage != nil {
-		t.storage.Close()
-	}
 	t.storage = s
 }
 
