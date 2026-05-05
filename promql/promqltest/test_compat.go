@@ -14,31 +14,132 @@
 package promqltest
 
 import (
+	"context"
+	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+// stableStorage is a storage.Storage with a stable identity that delegates
+// to a swappable inner. Consumers (notably an HTTP API server backed by
+// test.Storage()) keep their reference to the stableStorage across `clear`
+// commands inside the parsed test; clear() only resets stableStorage.inner.
+type stableStorage struct {
+	mu    sync.RWMutex
+	inner storage.Storage
+}
+
+func (s *stableStorage) get() storage.Storage {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.inner
+}
+
+func (s *stableStorage) set(inner storage.Storage) {
+	s.mu.Lock()
+	s.inner = inner
+	s.mu.Unlock()
+}
+
+func (s *stableStorage) Querier(mint, maxt int64) (storage.Querier, error) {
+	if inner := s.get(); inner != nil {
+		return inner.Querier(mint, maxt)
+	}
+	return errStorageQuerier{}, nil
+}
+
+func (s *stableStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	if inner := s.get(); inner != nil {
+		return inner.ChunkQuerier(mint, maxt)
+	}
+	return errStorageChunkQuerier{}, nil
+}
+
+func (s *stableStorage) StartTime() (int64, error) {
+	if inner := s.get(); inner != nil {
+		return inner.StartTime()
+	}
+	return 0, nil
+}
+
+func (s *stableStorage) Appender(ctx context.Context) storage.Appender {
+	return s.get().Appender(ctx)
+}
+
+func (s *stableStorage) Close() error {
+	if inner := s.get(); inner != nil {
+		return inner.Close()
+	}
+	return nil
+}
+
+type errStorageQuerier struct{}
+
+func (errStorageQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
+	return storage.EmptySeriesSet()
+}
+func (errStorageQuerier) LabelValues(_ context.Context, _ string, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+func (errStorageQuerier) LabelNames(_ context.Context, _ *storage.LabelHints, _ ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, nil
+}
+func (errStorageQuerier) Close() error { return nil }
+
+type errStorageChunkQuerier struct{ errStorageQuerier }
+
+func (errStorageChunkQuerier) Select(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.ChunkSeriesSet {
+	return storage.EmptyChunkSeriesSet()
+}
 
 // Test is the exported handle for parsed PromQL tests. It carries a parsed
 // command list, a backing storage, and a query engine. This pre-3.x shape
 // is preserved for fork consumers (notably promxy) that need to attach a
 // NodeReplacer to the engine before running, or to swap the storage for
 // a wrapping layer between parsing and execution.
+//
+// Storage indirection: Test owns a stableStorage wrapper. Each `clear`
+// command in the parsed input replaces the wrapper's inner with a fresh
+// teststorage; consumers holding the wrapper (e.g. an HTTP API server)
+// continue to see live data. SetStorage is independent: it installs a
+// caller-supplied storage as the runtime storage seen by the inner test
+// runner; the caller's storage is preserved across clear commands so that
+// the engine continues to query through the wrapping layer.
 type Test struct {
-	t      *test
-	engine *promql.Engine
-	closed bool
+	t        *test
+	engine   *promql.Engine
+	external *stableStorage // stable storage handed out via Storage()
+	override storage.Storage // installed via SetStorage; nil means "use external directly"
+	closed   bool
 }
 
 // NewTest parses the given test input and returns a Test ready to Run.
 func NewTest(t testutil.T, input string) (*Test, error) {
-	inner, err := newTest(t, input, false, newTestStorage)
+	wrapper := Test{external: &stableStorage{}}
+	open := func(_ testutil.T) storage.Storage {
+		// Reset the external wrapper's inner with a fresh teststorage on each
+		// clear (and once on creation, since newTest invokes the open function
+		// from inside its initial clear).
+		wrapper.external.set(newTestStorage(t))
+		// If the caller installed an override storage via SetStorage, hand
+		// the inner test runner that override; otherwise hand it the stable
+		// wrapper directly.
+		if wrapper.override != nil {
+			return wrapper.override
+		}
+		return wrapper.external
+	}
+	inner, err := newTest(t, input, false, open)
 	if err != nil {
 		return nil, err
 	}
-	engine := promql.NewEngine(promql.EngineOpts{
+	wrapper.t = inner
+	wrapper.engine = promql.NewEngine(promql.EngineOpts{
 		Logger:                   nil,
 		Reg:                      nil,
 		MaxSamples:               10000,
@@ -48,21 +149,29 @@ func NewTest(t testutil.T, input string) (*Test, error) {
 		EnableNegativeOffset:     true,
 		EnableDelayedNameRemoval: true,
 	})
-	return &Test{t: inner, engine: engine}, nil
+	return &wrapper, nil
 }
 
-// Storage returns the storage backing the Test.
-func (t *Test) Storage() storage.Storage { return t.t.storage }
+// Storage returns a stable storage.Storage that survives clear commands
+// inside the parsed test. Consumers that want a fixed read/write handle
+// across the test lifetime should use this.
+func (t *Test) Storage() storage.Storage { return t.external }
 
-// Queryable returns the storage as a storage.Queryable.
-func (t *Test) Queryable() storage.Queryable { return t.t.storage }
+// Queryable returns Storage as a storage.Queryable.
+func (t *Test) Queryable() storage.Queryable { return t.external }
 
 // QueryEngine returns the query engine the Test will use when Run is called.
 func (t *Test) QueryEngine() *promql.Engine { return t.engine }
 
-// SetStorage overrides the storage used during Run. The previous storage is
-// closed.
-func (t *Test) SetStorage(s storage.Storage) { t.t.SetStorage(s) }
+// SetStorage installs a caller-supplied storage as the runtime storage the
+// inner test runner will use for load/eval. The override is preserved
+// across `clear` commands; clear still resets the external wrapper's
+// inner (so any code that holds the wrapper, like an HTTP API server,
+// continues to see freshly-loaded data).
+func (t *Test) SetStorage(s storage.Storage) {
+	t.override = s
+	t.t.SetStorage(s)
+}
 
 // Run executes all parsed commands against the Test's engine and storage.
 func (t *Test) Run() error {
@@ -75,10 +184,6 @@ func (t *Test) Run() error {
 }
 
 // Close releases all resources held by the Test. Safe to call multiple times.
-//
-// Storage close errors are swallowed: callers may have wrapped t.Storage()
-// in a layered storage that itself owns the underlying handle, in which
-// case calling Close again here would double-close.
 func (t *Test) Close() {
 	if t.t == nil || t.closed {
 		return
@@ -90,7 +195,7 @@ func (t *Test) Close() {
 		// to keep Close idempotent for those cases.
 		func() {
 			defer func() { _ = recover() }()
-			t.t.storage.Close()
+			_ = t.t.storage.Close()
 		}()
 	}
 	if t.t.cancelCtx != nil {
