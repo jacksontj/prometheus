@@ -362,32 +362,17 @@ func Walk(ctx context.Context, v Visitor, s *EvalStmt, node Node, path []Node, n
 	}
 	path = append(path, node)
 
-	// We parallelize the execution of children
-	wg := &sync.WaitGroup{}
-	children := Children(node)
-	newChildren := make([]Node, len(children))
-	errs := make([]error, len(children))
-	for i, e := range children {
-		wg.Add(1)
-		go func(i int, e Node) {
-			defer wg.Done()
-			if childNode, childErr := Walk(ctx, v, s, e, append([]Node{}, path...), nr); childErr != nil {
-				errs[i] = childErr
-			} else {
-				newChildren[i] = childNode
-			}
-		}(i, e)
-	}
-	wg.Wait()
-
-	// If there was an error we return the first one
-	for _, err := range errs {
+	// Walk children sequentially. The fork briefly experimented with running
+	// the per-child Walk calls in goroutines, but it triggers data races in
+	// upstream visitors (atModifierTestCases, the deduplication finders in
+	// proxystorage, etc.) that mutate per-walk state without synchronisation.
+	// If parallelism becomes worth restoring, gate it behind a flag and add
+	// the necessary locking on the visitor side.
+	for i, e := range Children(node) {
+		childNode, err := Walk(ctx, v, s, e, path, nr)
 		if err != nil {
 			return node, err
 		}
-	}
-
-	for i, childNode := range newChildren {
 		SetChild(node, i, childNode)
 	}
 
