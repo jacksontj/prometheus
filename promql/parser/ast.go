@@ -362,18 +362,50 @@ func Walk(ctx context.Context, v Visitor, s *EvalStmt, node Node, path []Node, n
 	}
 	path = append(path, node)
 
-	// Walk children sequentially. The fork briefly experimented with running
-	// the per-child Walk calls in goroutines, but it triggers data races in
-	// upstream visitors (atModifierTestCases, the deduplication finders in
-	// proxystorage, etc.) that mutate per-walk state without synchronisation.
-	// If parallelism becomes worth restoring, gate it behind a flag and add
-	// the necessary locking on the visitor side.
-	for i, e := range Children(node) {
-		childNode, err := Walk(ctx, v, s, e, path, nr)
-		if err != nil {
+	// Walk children. When a NodeReplacer is installed we may rewrite the
+	// AST, so we have to wait for each child to return before installing
+	// the (possibly new) value via SetChild — and we have to do it
+	// sequentially to avoid concurrent SetChild writes racing against
+	// PositionRange / Children reads on shared parents.
+	//
+	// When there is no NodeReplacer the visit is read-only: we don't need
+	// SetChild at all and can fan out children to goroutines for the I/O
+	// parallelism that promxy depends on (e.g. populateSeries firing one
+	// downstream HTTP request per VectorSelector).
+	children := Children(node)
+	if nr != nil {
+		for i, e := range children {
+			childNode, err := Walk(ctx, v, s, e, path, nr)
+			if err != nil {
+				return node, err
+			}
+			SetChild(node, i, childNode)
+		}
+	} else if len(children) == 1 {
+		// Single-child fast path: avoid spawning a goroutine for the
+		// linear chains (UnaryExpr / ParenExpr / StepInvariantExpr /
+		// MatrixSelector) that dominate AST shapes.
+		if _, err := Walk(ctx, v, s, children[0], path, nr); err != nil {
 			return node, err
 		}
-		SetChild(node, i, childNode)
+	} else {
+		wg := &sync.WaitGroup{}
+		errs := make([]error, len(children))
+		for i, e := range children {
+			wg.Add(1)
+			go func(i int, e Node) {
+				defer wg.Done()
+				if _, childErr := Walk(ctx, v, s, e, append([]Node{}, path...), nr); childErr != nil {
+					errs[i] = childErr
+				}
+			}(i, e)
+		}
+		wg.Wait()
+		for _, err := range errs {
+			if err != nil {
+				return node, err
+			}
+		}
 	}
 
 	_, err = v.Visit(nil, nil)
