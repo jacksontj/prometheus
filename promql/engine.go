@@ -914,10 +914,8 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 
 		case *parser.MatrixSelector:
 			l.Lock()
-			prefix := make([]posrange.PositionRange, len(path))
-			for i, p := range path {
-				prefix[i] = p.PositionRange()
-			}
+			prefix := make([]parser.Node, len(path))
+			copy(prefix, path)
 			ranges = append(ranges, evalRange{Prefix: prefix, Range: n.Range})
 			l.Unlock()
 		}
@@ -1029,10 +1027,8 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 
 		case *parser.MatrixSelector:
 			l.Lock()
-			prefix := make([]posrange.PositionRange, len(path))
-			for i, p := range path {
-				prefix[i] = p.PositionRange()
-			}
+			prefix := make([]parser.Node, len(path))
+			copy(prefix, path)
 			ranges = append(ranges, evalRange{Prefix: prefix, Range: n.Range})
 			l.Unlock()
 		}
