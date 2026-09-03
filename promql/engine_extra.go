@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 func findPathRange(path []parser.Node, eRanges []evalRange) time.Duration {
@@ -21,7 +20,7 @@ func findPathRange(path []parser.Node, eRanges []evalRange) time.Duration {
 		// Check if we are a child
 		child := true
 		for i, p := range r.Prefix {
-			if p != path[i].PositionRange() {
+			if p != path[i] {
 				child = false
 				break
 			}
@@ -36,7 +35,12 @@ func findPathRange(path []parser.Node, eRanges []evalRange) time.Duration {
 }
 
 // evalRange summarizes a defined evalRange (from a MatrixSelector) within the ast
+//
+// Prefix identifies the ancestor chain by node pointer rather than by
+// PositionRange: parser.Walk fans siblings out when a NodeReplacer is
+// installed, and PositionRange() recurses into a node's children, so reading
+// it here would race with the SetChild calls a sibling subtree performs.
 type evalRange struct {
-	Prefix []posrange.PositionRange
+	Prefix []parser.Node
 	Range  time.Duration
 }

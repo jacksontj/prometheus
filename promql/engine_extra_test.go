@@ -29,6 +29,13 @@ func (s StubNode) PositionRange() posrange.PositionRange {
 }
 
 func TestFindPathRange(t *testing.T) {
+	var (
+		root  = StubNode{0, 10}
+		left  = StubNode{0, 4}
+		inner = StubNode{1, 3}
+		right = StubNode{6, 10}
+	)
+
 	tests := []struct {
 		path    []parser.Node
 		eRanges []evalRange
@@ -36,14 +43,33 @@ func TestFindPathRange(t *testing.T) {
 	}{
 		// Test a case where the evalRange is longer than the path
 		{
-			path: []parser.Node{StubNode{0, 1}},
+			path: []parser.Node{root},
 			eRanges: []evalRange{
-				evalRange{
-					Prefix: []posrange.PositionRange{
-						{Start: posrange.Pos(0), End: posrange.Pos(1)},
-						{Start: posrange.Pos(1), End: posrange.Pos(3)},
-					},
-				},
+				{Prefix: []parser.Node{root, left}, Range: time.Minute},
+			},
+		},
+		// An ancestor of the path: its range applies
+		{
+			path: []parser.Node{root, left, inner},
+			eRanges: []evalRange{
+				{Prefix: []parser.Node{root, left}, Range: time.Minute},
+			},
+			out: time.Minute,
+		},
+		// The deepest matching prefix wins
+		{
+			path: []parser.Node{root, left, inner},
+			eRanges: []evalRange{
+				{Prefix: []parser.Node{root}, Range: time.Hour},
+				{Prefix: []parser.Node{root, left}, Range: time.Minute},
+			},
+			out: time.Minute,
+		},
+		// A range recorded under a sibling subtree must not leak across
+		{
+			path: []parser.Node{root, right},
+			eRanges: []evalRange{
+				{Prefix: []parser.Node{root, left}, Range: time.Minute},
 			},
 		},
 	}
