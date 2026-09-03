@@ -230,9 +230,9 @@ type VectorSelector struct {
 	PosRange posrange.PositionRange
 }
 
-func (m *VectorSelector) GetLookbackDelta(d time.Duration) time.Duration {
-	if m.LookbackDelta > 0 {
-		return m.LookbackDelta
+func (e *VectorSelector) GetLookbackDelta(d time.Duration) time.Duration {
+	if e.LookbackDelta > 0 {
+		return e.LookbackDelta
 	}
 	return d
 }
@@ -353,7 +353,6 @@ func Walk(ctx context.Context, v Visitor, s *EvalStmt, node Node, path []Node, n
 		if err != nil {
 			return node, err
 		}
-
 	}
 
 	var err error
@@ -430,7 +429,7 @@ func ExtractSelectors(expr Expr) [][]*labels.Matcher {
 		selectors [][]*labels.Matcher
 		l         sync.Mutex
 	)
-	Inspect(context.TODO(), &EvalStmt{Expr: expr}, func(node Node, _ []Node) error {
+	_, _ = Inspect(context.TODO(), &EvalStmt{Expr: expr}, func(node Node, _ []Node) error {
 		vs, ok := node.(*VectorSelector)
 		if ok {
 			l.Lock()
@@ -456,8 +455,7 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // f(node, path); node must not be nil. If f returns a nil error, Inspect invokes f
 // for all the non-nil children of node, recursively.
 func Inspect(ctx context.Context, s *EvalStmt, f inspector, nr NodeReplacer) (Node, error) {
-	//nolint: errcheck
-	return Walk(ctx, inspector(f), s, s.Expr, nil, nr)
+	return Walk(ctx, f, s, s.Expr, nil, nr)
 }
 
 func SetChild(node Node, i int, child Node) {
@@ -470,12 +468,13 @@ func SetChild(node Node, i int, child Node) {
 	case *AggregateExpr:
 		// While this does not look nice, it should avoid unnecessary allocations
 		// caused by slice resizing
-		if n.Expr == nil && n.Param == nil {
-		} else if n.Expr == nil {
+		switch {
+		case n.Expr == nil && n.Param == nil:
+		case n.Expr == nil:
 			n.Param = child.(Expr)
-		} else if n.Param == nil {
+		case n.Param == nil:
 			n.Expr = child.(Expr)
-		} else {
+		default:
 			switch i {
 			case 0:
 				n.Expr = child.(Expr)
