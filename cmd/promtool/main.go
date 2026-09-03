@@ -1331,7 +1331,7 @@ func labelsSetPromQL(query, labelMatchType, name, value string) error {
 		return fmt.Errorf("invalid label match type: %s", labelMatchType)
 	}
 
-	parser.Inspect(context.TODO(), &parser.EvalStmt{Expr: expr}, func(node parser.Node, _ []parser.Node) error {
+	_, _ = parser.Inspect(context.TODO(), &parser.EvalStmt{Expr: expr}, func(node parser.Node, _ []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
 			var found bool
 			for i, l := range n.LabelMatchers {
@@ -1362,7 +1362,7 @@ func labelsDeletePromQL(query, name string) error {
 		return err
 	}
 
-	parser.Inspect(context.TODO(), &parser.EvalStmt{Expr: expr}, func(node parser.Node, _ []parser.Node) error {
+	_, _ = parser.Inspect(context.TODO(), &parser.EvalStmt{Expr: expr}, func(node parser.Node, _ []parser.Node) error {
 		if n, ok := node.(*parser.VectorSelector); ok {
 			for i, l := range n.LabelMatchers {
 				if l.Name == name {
