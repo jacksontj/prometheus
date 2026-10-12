@@ -69,6 +69,12 @@ func TestApiStatusCodes(t *testing.T) {
 			expectedCode:   http.StatusServiceUnavailable,
 		},
 
+		"promql.ErrStorage": {
+			err:            promql.ErrStorage{Err: errors.New("some error")},
+			expectedString: "some error",
+			expectedCode:   http.StatusInternalServerError,
+		},
+
 		"context.DeadlineExceeded": {
 			err:            context.DeadlineExceeded,
 			expectedString: "context deadline exceeded",
@@ -86,17 +92,34 @@ func TestApiStatusCodes(t *testing.T) {
 			"error from querier":   errorTestQueryable{q: errorTestQuerier{err: tc.err}},
 			"error from seriesset": errorTestQueryable{q: errorTestQuerier{s: errorTestSeriesSet{err: tc.err}}},
 		} {
-			t.Run(fmt.Sprintf("%s/%s", name, k), func(t *testing.T) {
-				r := createPrometheusAPI(t, q)
-				rec := httptest.NewRecorder()
+			for _, ep := range []struct {
+				path string
+				// selects is set for the endpoints that read series, and
+				// so see an error from the series set.
+				selects bool
+			}{
+				{"/api/v1/query?query=up", true},
+				{"/api/v1/series?match[]=up", true},
+				{"/api/v1/labels", false},
+				{"/api/v1/labels?match[]=up&match[]=down", false},
+				{"/api/v1/label/foo/values", false},
+				{"/api/v1/label/foo/values?match[]=up&match[]=down", false},
+			} {
+				if k == "error from seriesset" && !ep.selects {
+					continue
+				}
+				t.Run(fmt.Sprintf("%s/%s/%s", name, k, ep.path), func(t *testing.T) {
+					r := createPrometheusAPI(t, q)
+					rec := httptest.NewRecorder()
 
-				req := httptest.NewRequest(http.MethodGet, "/api/v1/query?query=up", nil)
+					req := httptest.NewRequest(http.MethodGet, ep.path, nil)
 
-				r.ServeHTTP(rec, req)
+					r.ServeHTTP(rec, req)
 
-				require.Equal(t, tc.expectedCode, rec.Code)
-				require.Contains(t, rec.Body.String(), tc.expectedString)
-			})
+					require.Equal(t, tc.expectedCode, rec.Code)
+					require.Contains(t, rec.Body.String(), tc.expectedString)
+				})
+			}
 		}
 	}
 }
